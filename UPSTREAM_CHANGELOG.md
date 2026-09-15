@@ -14,6 +14,31 @@ explicitly with how it was resolved. "Regression" reports the G-code diff of our
 
 ---
 
+## 44242 — 2026-09-07 (from 44241)
+
+### What changed upstream
+
+`protectedProbeMove()` now uses the operation's `tool_feedProbeLink` parameter
+for protected XY and Z positioning, falling back to `_cycle.feedrate` when the
+parameter is absent. Previously XY used `highFeedrate` and Z used `cycle.feedrate`.
+
+### Merge impact
+
+- Ported clean; the customization diff against upstream is unchanged.
+- Our safe-probing rapid-move protection remains intact, including its existing
+  high-feed setting. This upstream change affects protected cycle positioning.
+- All 45 fixtures posted successfully for previous/new upstream and modified
+  versions (180 successful posts, zero failures).
+- Four probing fixtures changed: `PG Rectangle Boss`, `update tool wear`,
+  `PWCS Bore with override`, and `PWCS Rectangle block`. Each changed one emitted
+  protected-positioning feed word from F39.4 to F118.1 (inch-mode fixtures),
+  honoring the operation's probe-link feedrate. Modal feed also applies to
+  subsequent protected moves until another feed is emitted.
+- Modified output deltas exactly match upstream output deltas; the other 41
+  fixtures are unchanged. Validation covers generated output, not machine trials.
+
+---
+
 ## 44241 — 2026-09-02 (from 44229)
 
 ### What changed upstream
