@@ -18,24 +18,67 @@ explicitly with how it was resolved. "Regression" reports the G-code diff of our
 
 ### What changed upstream
 
-`protectedProbeMove()` now uses the operation's `tool_feedProbeLink` parameter
-for protected XY and Z positioning, falling back to `_cycle.feedrate` when the
-parameter is absent. Previously XY used `highFeedrate` and Z used `cycle.feedrate`.
+One hunk in `protectedProbeMove()`, the helper every probing cycle calls for its
+protected (G65 P8810 / P8703) positioning moves:
+
+```
+   var _code = getProperty("probingType") == "Renishaw" ? 8810 : 8703;
++  var feedrate = getParameter("operation:tool_feedProbeLink", _cycle.feedrate);
+   if (_z && z >= getCurrentPosition().z) {
+-    writeBlock(gFormat.format(65), "P" + _code, _z, getFeed(cycle.feedrate)); // protected positioning move
++    writeBlock(gFormat.format(65), "P" + _code, _z, getFeed(feedrate)); // protected positioning move
+   }
+   if (_x || _y) {
+-    writeBlock(gFormat.format(65), "P" + _code, _x, _y, getFeed(highFeedrate)); // protected positioning move
++    writeBlock(gFormat.format(65), "P" + _code, _x, _y, getFeed(feedrate)); // protected positioning move
+   }
+   if (_z && z < getCurrentPosition().z) {
+-    writeBlock(gFormat.format(65), "P" + _code, _z, getFeed(cycle.feedrate)); // protected positioning move
++    writeBlock(gFormat.format(65), "P" + _code, _z, getFeed(feedrate)); // protected positioning move
+   }
+```
+
+All three protected moves (Z up, XY, Z down) now use the probe tool's link
+feedrate, falling back to `_cycle.feedrate` when the parameter is absent.
+Previously Z used `cycle.feedrate` and XY used the post-wide `highFeedrate`
+constant.
+
+### Why (likely rationale)
+
+A Fusion probe tool carries two dedicated feeds: a *link* feed for positioning
+between measurements (`tool_feedProbeLink`) and a *measure* feed for the touch
+itself (`tool_feedProbeMeasure`). The old code used neither for positioning. In
+the fixtures `cycle.feedrate` on a probing cycle equals the tool's plunge/entry
+feed (1000 mm/min, vs. 3000 link / 300 measure), and `highFeedrate` is a fixed
+post constant (5000 mm/min) that ignores the tool entirely. Protected positioning
+moves are linking moves, so the link feed is the value the user actually set for
+them. Reading it with a fallback keeps operations that lack the parameter on the
+previous Z behaviour.
 
 ### Merge impact
 
-- Ported clean; the customization diff against upstream is unchanged.
-- Our safe-probing rapid-move protection remains intact, including its existing
-  high-feed setting. This upstream change affects protected cycle positioning.
-- All 45 fixtures posted successfully for previous/new upstream and modified
-  versions (180 successful posts, zero failures).
-- Four probing fixtures changed: `PG Rectangle Boss`, `update tool wear`,
-  `PWCS Bore with override`, and `PWCS Rectangle block`. Each changed one emitted
-  protected-positioning feed word from F39.4 to F118.1 (inch-mode fixtures),
-  honoring the operation's probe-link feedrate. Modal feed also applies to
-  subsequent protected moves until another feed is emitted.
-- Modified output deltas exactly match upstream output deltas; the other 41
-  fixtures are unchanged. Validation covers generated output, not machine trials.
+- Ported clean — one hunk plus the header. Our safe-probing customization (#9)
+  lives in `onRapid()` and still emits its approach moves at `highFeedrate`; it
+  does not call `protectedProbeMove()`, so it is unaffected. The customization
+  diff against upstream is unchanged (31 hunks before and after).
+- **Regression (modified 44241 → 44242):** 4 fixtures changed, all probing, and
+  identically on the upstream track (upstream's own 44241 → 44242 output delta is
+  the same four lines):
+  - `Probing/Geometry/PG Rectangle Boss.nc`, `Probing/Geometry/update tool wear.nc`,
+    `Probing/WCS/PWCS Bore with override.nc`, `Probing/WCS/PWCS Rectangle block.nc`:
+    each changes exactly one line, the cycle's protected Z approach, from
+    `G65 P8810 Z… F39.4` to `G65 P8810 Z… F118.1` (inch-mode fixtures;
+    1000 → 3000 mm/min, the probe tool's link feed). The XY protected move inside
+    the cycle emits nothing on either track because the preceding approach move
+    has already positioned XY, and the cycle's later Z moves inherit the feed
+    modally.
+  - The other 41 fixtures are byte-identical. All 45 fixtures post with 0 failures
+    on both tracks and both revisions (180 posts). Validation covers generated
+    output, not machine trials.
+- **Heads-up for the machine:** the cycle's protected Z approach speed is now set
+  by the probe tool's link feedrate in the Fusion tool library, not by its plunge
+  feed. It is still a G31 P2 skip-protected move, but check the link feed on the
+  Renishaw tool definition so the approach runs at an intended speed.
 
 ---
 
