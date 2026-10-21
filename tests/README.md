@@ -57,7 +57,7 @@ After `./update.sh` has saved the new `upstream/<new-label>.cps` and bootstrappe
 ./tests/regression.sh diff-pair <new-label>                    # what our customizations do
 ```
 
-The fixtures are in inches, while the modified post refuses non-millimeter output (the D00 has no G20/G21). The harness therefore passes `--property allowInchOutput true`, a hidden property only the tests use; posts that don't define it ignore it.
+The fixtures are in inches, while the modified post stops when the output unit differs from its `controlUnit` property (default Millimeters; the D00 has no G20/G21). The harness therefore posts with `--property controlUnit '"IN"'`; posts that don't define the property ignore it.
 
 Some fixtures exercise output the modified post deliberately refuses (for example `tcp with tsc` uses T0, which G100 does not accept). They are listed in `tests/expected-failures.txt` as `<fixture path>|<error text>`. On a `modified` run, a listed fixture passes only if posting stops with that error text; if it posts, or stops with a different error, it counts as a failure. Upstream runs ignore the list.
 

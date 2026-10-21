@@ -97,17 +97,21 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 - **Effect:** silent 100× tool offset correction.
 - **Fix (no motion change):** write `F0`.
 
-### 1.5 Inch output runs 25.4× too small — Upstream, new (found 2026-10-21 after batch 1)
+### 1.5 A unit mismatch scales every value by 25.4 — Upstream, new (found 2026-10-21 after batch 1)
 - **Code:** the post never writes G20/G21 (`gUnitModal` is unused); `onOpen` only writes the
   comment "FILE OUTPUT IN INCHES. PLEASE ENSURE THE UNIT IS SET CORRECTLY ON THE CONTROL".
 - **Manual:** the D00 G-code list (PM ~1580–1680) has no G20/G21; units are a machine setting,
   and this machine is metric (011004 = 20000 mm/min; tool lengths 66–161 mm).
-- **Effect:** a program posted from an inch setup runs every coordinate 25.4× too small —
-  `G100 … Z1.1811` (30 mm clearance) would stop 1.2 mm above Z0.
-- **Fix (done, no motion change):** error unless `unit == MM`. Forcing `unit = MM` in `onOpen`
-  converts motion correctly in a test, but values computed at load (`highFeedrate`, formats)
-  and raw `getParameter` values would stay in inches, so it was rejected. The regression
-  harness passes a hidden `allowInchOutput` property because the fixtures are inch.
+- **Effect:** a program posted in a unit other than the control's runs every value 25.4× off —
+  on this metric machine, an inch program's `G100 … Z1.1811` (30 mm clearance) would stop
+  1.2 mm above Z0.
+- **Fix (done, no motion change):** a `controlUnit` property (Millimeters / Inches, default
+  Millimeters for this machine; inch-spec D00 machines use Inches) and an error when the
+  output unit differs from it. A first version refused all inch output, which would have
+  locked out inch machines; replaced at the owner's request. Forcing `unit = MM` in `onOpen`
+  converts positions correctly in a test, but values computed at load (`highFeedrate`,
+  formats) and raw `getParameter` values would stay in inches, so it was rejected. The
+  regression harness posts with `controlUnit` = Inches because the fixtures are inch.
 
 ## 2. Safe probing claims more than it does — Ours (#9) (was A1)
 

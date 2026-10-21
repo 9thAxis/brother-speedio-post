@@ -278,14 +278,17 @@ properties = {
     value      : true,
     scope      : "post"
   },
-  allowInchOutput: {
-    title      : "Allow inch output (tests only)",
-    description: "Posting stops unless the output unit is millimeters, because this machine is metric and the CNC-D00 has no G20/G21. Only the regression tests, whose CNC files are in inches, turn this on. Never use it for a program that will run on the machine.",
-    group      : "preferences",
-    type       : "boolean",
-    value      : false,
-    visible    : false,
-    scope      : "post"
+  controlUnit: {
+    title      : "Control unit",
+    description: "The unit the machine's control is set to. The CNC-D00 has no G20/G21, so the program cannot switch units: posting stops if the NC program's output unit differs from this setting.",
+    group      : "configuration",
+    type       : "enum",
+    values     : [
+      {title:"Millimeters", id:"MM"},
+      {title:"Inches", id:"IN"}
+    ],
+    value: "MM",
+    scope: "post"
   }
 };
 
@@ -473,9 +476,11 @@ function defineMachine() {
 }
 
 function onOpen() {
-  // The CNC-D00 has no G20/G21 and this machine is metric: inch values would run 25.4 times too small.
-  if (unit != MM && !getProperty("allowInchOutput")) {
-    error(localize("This machine runs in millimeters and the CNC-D00 has no G20/G21. Set the NC program output unit to millimeters."));
+  // The CNC-D00 has no G20/G21, so a unit mismatch would scale every value by 25.4.
+  var controlIsMM = getProperty("controlUnit") != "IN";
+  if ((unit == MM) != controlIsMM) {
+    error(subst(localize("The NC program is in %1 but the control unit is set to %2. The CNC-D00 has no G20/G21: set the output unit to match the control, or change the 'Control unit' property."),
+      unit == MM ? "millimeters" : "inches", controlIsMM ? "millimeters" : "inches"));
     return;
   }
   // define and enable machine configuration

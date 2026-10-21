@@ -24,6 +24,7 @@ These properties can be toggled in Fusion's post processor dialog:
 | Property | Default | Description |
 |---|---|---|
 | Enable safe probing | ON | Uses protected positioning (O8810) instead of G0 for rapids inside probe operations once the probe is on. The approach to clearance height is not covered. Disable for maximum speed in production when you trust your WCS. |
+| Control unit | Millimeters | The unit the control is set to. The CNC-D00 has no G20/G21, so posting stops if the NC program's unit differs. Set to Inches for an inch-spec machine. |
 | Commissioning mode | ON | Stops (M0) after each inspection operation so the operator can check measurements. Disable for production runs. |
 | Stuck chips detection | OFF | Outputs M318 at program start to enable Z-axis load monitoring during tool changes. Only useful once your magazine tool lineup is stable — frequent tool swaps cause false alarms against the learned baselines. |
 
