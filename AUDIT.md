@@ -22,8 +22,10 @@ with a `controlUnit` property (94b4185); `maximumTappingSpeed` property instead 
 (8eff760); §7.2 closed by the owner's TCP use with unchanged .mch kinematics (cbe3000).
 Machine validation plan: `MACHINE_VALIDATION.md`.
 
-**Open:** §1.1 machine check (`#5325`/`#5326` on G59, validation A1), §6.6 (Mode B levels,
-owner), §6.7–§6.8. §6.1 is the owner's (014501). **Deferred** (optimisation or new motion, not
+§6.6 Mode B levels remapped to the D00 table (CUSTOMIZATIONS #16); #11's Mode A rationale
+corrected (Mode AIII is supported on the D00; removed to keep M298 as the one non-TCP system).
+
+**Open:** §1.1 machine check (`#5325`/`#5326` on G59, validation A1), §6.7–§6.8. §6.1 is the owner's (014501). **Deferred** (optimisation or new motion, not
 pursued): §2 approach redesign, §4.2 expansion, G1b, G6, G7.
 
 ## Safety rule for every recommendation
@@ -225,9 +227,11 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
   same as no machining level (high speed) — a sensible roughing level, matching the intent of
   the Mode A table the `[0, 5, 3, 4, 1, 2]` offsets come from (M265 = high speed). The real
   inversion is semi-roughing → M283 (corner decel 2/2/10 %, accel 10 %), slower than finishing's
-  M282. Cycle time only; no change made. Origin: Autodesk applied Mode A level offsets
+  M282. Cycle time only. Origin: Autodesk applied Mode A level offsets
   (PM 13-1 ~23760: 0 shape accuracy, 5 high speed, 3/4 surface, 1/2 shape) to M28x, whose D00
-  levels mean something else.
+  levels mean something else. The offsets are correct for Mode AIII, which the D00 does support
+  (PM 13.1; parameters 1010x1–1017x8 populated on the control).
+  **Done (owner's decision):** remapped as proposed — CUSTOMIZATIONS #16.
 - **6.7 The parameter backup folder `s500xd2-2026-10-12` is this U500XD2** (5-axis strokes,
   16K, 28 tools, T28 = `OMP400-4MM-01`). Rename.
 - **6.8 O8898 loads the probe as T28**; the Fusion library should use T28.

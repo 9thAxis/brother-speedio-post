@@ -37,10 +37,10 @@ The post is set to **Automatic** smoothing, which selects the M298/Mode B level 
 
 | Fusion stock-to-leave | Category | 3-axis (M298) | 5-axis TCP (Mode B) |
 |---|---|---|---|
-| >= 0.5mm (or face op) | Roughing | M298 L2 | M285 |
-| 0.1 – 0.5mm | Semi-roughing | M298 L3 | M283 |
+| >= 0.5mm (or face op) | Roughing | M298 L2 | M284 |
+| 0.1 – 0.5mm | Semi-roughing | M298 L3 | M280 |
 | 0.05 – 0.1mm | Semi-finishing | M298 L4 | M281 |
-| < 0.05mm (or 0) | Finishing | M298 L6 | M282 |
+| < 0.05mm (or 0) | Finishing | M298 L6 | M283 |
 
 Probing and drilling cycles always skip smoothing regardless of the setting.
 
@@ -52,13 +52,13 @@ If `useSmoothing` is changed from Automatic to a fixed level in the post propert
 |---|---|---|
 | Off | _(no output)_ | _(no output)_ |
 | Standard | M298 L1 | M280 |
-| Roughing | M298 L2 | M285 |
-| Medium rough | M298 L3 | M283 |
-| Medium rough high | M298 L4 | M284 |
+| Roughing | M298 L2 | M284 |
+| Medium rough | M298 L3 | M280 |
+| Medium rough high | M298 L4 | M282 |
 | Finishing | M298 L5 | M281 |
-| Finishing high | M298 L6 | M282 |
+| Finishing high | M298 L6 | M283 |
 
-Note: the property ids (0-5) are offsets from level 1, so each choice writes the M298 level its title names (Programming Manual 13.3: L0 off, L1 Standard … L6 Finishing S). Upstream writes the raw id, one level too low (see [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #12). Automatic is recommended — it picks the right level per operation based on your CAM setup.
+Note: the property ids (0-5) are offsets from level 1, so each choice writes the M298 level its title names (Programming Manual 13.3: L0 off, L1 Standard … L6 Finishing S). Upstream writes the raw id, one level too low (see [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #12). Mode B codes follow the D00 Mode B levels (M280 surface medium, M281 + shape, M282 surface high, M283 + shape, M284 high speed + smooth); see [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #16. Automatic is recommended — it picks the right level per operation based on your CAM setup.
 
 ## Repo layout
 

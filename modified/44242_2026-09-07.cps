@@ -218,12 +218,12 @@ properties = {
     values     : [
       {title:"Off", id:"-1"},
       {title:"Automatic", id:"9999"},
-      {title:"Standard", id:"0"}, // 0
-      {title:"Roughing", id:"1"}, // 5
-      {title:"Medium rough", id:"2"}, // 3
-      {title:"Medium rough high", id:"3"}, // 4
-      {title:"Finishing", id:"4"}, // 1
-      {title:"Finishing high", id:"5"} // 2
+      {title:"Standard", id:"0"}, // Mode B M280
+      {title:"Roughing", id:"1"}, // Mode B M284
+      {title:"Medium rough", id:"2"}, // Mode B M280
+      {title:"Medium rough high", id:"3"}, // Mode B M282
+      {title:"Finishing", id:"4"}, // Mode B M281
+      {title:"Finishing high", id:"5"} // Mode B M283
     ],
     value: "9999",
     scope: "post"
@@ -514,10 +514,12 @@ function onOpen() {
   // setup for proper smoothing mode
   switch (getProperty("smoothingMode")) {
   case "B":
-    settings.smoothing.roughing = 5;
-    settings.smoothing.semi = 3;
-    settings.smoothing.semifinishing = 1;
-    settings.smoothing.finishing = 2;
+    // Mode B levels on the D00 (programming manual 14.2.6.4): M280 surface quality (medium), M281 + shape accuracy,
+    // M282 surface quality (high), M283 + shape accuracy, M284 high speed + smooth; M285-M287 user defined
+    settings.smoothing.roughing = 4; // M284
+    settings.smoothing.semi = 0; // M280
+    settings.smoothing.semifinishing = 1; // M281
+    settings.smoothing.finishing = 3; // M283
     break;
   case "M298":
     // Only finishing is overridden — the framework defaults for roughing/semi/semifinishing
@@ -525,10 +527,10 @@ function onOpen() {
     settings.smoothing.finishing = 6; // M298 L6 = Finishing S
     // M298 is incompatible with TCP (G43.4/G43.5). For multi-axis TCP operations,
     // Mode B (M280-M287) is used instead — it is valid regardless of TCP state.
-    settings.smoothing.modeBRoughing = 5;
-    settings.smoothing.modeBSemi = 3;
-    settings.smoothing.modeBSemifinishing = 1;
-    settings.smoothing.modeBFinishing = 2;
+    settings.smoothing.modeBRoughing = 4; // M284 high speed + smooth
+    settings.smoothing.modeBSemi = 0; // M280 surface quality (medium)
+    settings.smoothing.modeBSemifinishing = 1; // M281 surface quality (medium) + shape accuracy
+    settings.smoothing.modeBFinishing = 3; // M283 surface quality (high) + shape accuracy
     break;
   }
 
@@ -579,7 +581,8 @@ function setSmoothing(mode) {
   propertyBaseLevel = isNaN(propertyBaseLevel) ? -1 : propertyBaseLevel;
   // explicit property levels (ids 0-5) count from level 1, automatic levels are already M298 L numbers
   var isExplicitLevel = propertyBaseLevel >= 0 && propertyBaseLevel <= 5;
-  var mappedLevel = isExplicitLevel ? [0, 5, 3, 4, 1, 2][propertyBaseLevel] : smoothing.level;
+  // Mode B level per explicit choice, following the M298 mode names (upstream used Mode A's level order here)
+  var mappedLevel = isExplicitLevel ? [0, 4, 0, 2, 1, 3][propertyBaseLevel] : smoothing.level;
   switch (getProperty("smoothingMode")) {
   case "B":
     writeBlock(mFormat.format(mode ? 280 + mappedLevel : 289));

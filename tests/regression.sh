@@ -107,7 +107,7 @@ LEVELS_PLAIN_FIXTURE="Milling/2D/face"
 LEVELS_TCP_FIXTURE="Milling/5x Simultaneous/5x contour"
 LEVELS_IDS=(0 1 2 3 4 5)
 LEVELS_M298=("M298 L1" "M298 L2" "M298 L3" "M298 L4" "M298 L5" "M298 L6")
-LEVELS_MODEB=(M280 M285 M283 M284 M281 M282)
+LEVELS_MODEB=(M280 M284 M280 M282 M281 M283)
 
 check_level_output() {
   local out="$1" pattern="$2" expected="$3" desc="$4" got
