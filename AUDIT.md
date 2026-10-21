@@ -136,7 +136,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 - PM 11285 (G84), ~11380 (G77): `<<Spindle speed error>>` above Max. tapping speed; IM2 578
   and `MPRD1` 11000058 = 6000 (16K spindle).
 - Repro: spindle speed forced to 7000 → `G100 … S7000 M03`, `G77 … L6000`, no warning.
-- Fix: `error()` in the tapping cases when `spindleSpeed > 6000`.
+- Fix: `error()` in the tapping cases when `spindleSpeed` exceeds a `maximumTappingSpeed` property (default 6000; 8000 on 27K spindles per IM2 578), which also caps the L word.
 
 ### 3.2 Manual boring writes G88, which the D00 lacks — Upstream (was B2)
 - Code 1022–1028; no G88 in PM (list 1651–1672, table ~10915–10966).

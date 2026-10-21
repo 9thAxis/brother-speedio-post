@@ -67,7 +67,7 @@ bump and how it affected the merge.
 - **Where:** `doubleTapWithdrawSpeed` property definition (`grep 'doubleTapWithdrawSpeed'`)
 - **From:** `value: false`
 - **To:** `value: true`
-- **Why:** Outputs an L value in G77 tapping cycles for faster withdrawal (up to 6000 RPM). Takes advantage of the 16K spindle's capability.
+- **Why:** Outputs an L value in G77 tapping cycles for faster withdrawal, capped at the `maximumTappingSpeed` property (machine parameter 11000058, 6000 by default).
 
 ## 8. Stuck chips detection (optional, default OFF)
 
@@ -178,8 +178,8 @@ These are validation errors and warnings only; none changes generated motion. Ea
 | Error for any probe operation whose tool axis is not +Z | `writeProbeCycle()` | Renishaw cycles cannot run under coordinate rotation (Inspection Plus manual, "cancel code G69"); upstream only refused WCS probing, and only with `useTiltedWorkplane` off. |
 | Error instead of rotary-offset angle compensation (`AXIS_ROT`) | `setProbeAngle()` | The slot assumes Fanuc numbering (`#5225` = C for G54). On the D00 the rotaries are the 5th (A) and 6th (C) axes, so `#5225` is most likely A. Disabled until confirmed on the control. |
 | 0 % tool wear feedback writes `F0` | `getProbingArguments()` | Upstream wrote `F100` for 0 % (a 100× correction); the macro expects 0 to 1. |
-| Error when a tap's spindle speed exceeds 6000 | `writeDrillCycle()`, `maximumTappingSpeed` | Machine parameter 11000058 (Max. tapping speed) = 6000; G77/G78/G84 alarm above it. |
-| Tap `L` word formatted through `rpmFormat` and capped at `maximumTappingSpeed` | `writeDrillCycle()` | A fractional rpm printed as `L3819.7186342`. |
+| Error when a tap's spindle speed exceeds the new `maximumTappingSpeed` property (default 6000) | `writeDrillCycle()` | Machine parameter 11000058 (Max. tapping speed): G77/G78/G84 alarm above it. Factory values are 6000 for 10K/12K/16K spindles and 8000 for 27K spindles, hence a property rather than a constant. |
+| Tap `L` word formatted through `rpmFormat` and capped at the `maximumTappingSpeed` property instead of a fixed 6000 | `writeDrillCycle()` | A fractional rpm printed as `L3819.7186342`; a 27K spindle was capped below its limit. |
 | Error for manual boring | `writeDrillCycle()` | Upstream wrote G88, which the D00 does not have. |
 | Error for canned cycles and G02/G03/G02.4 under TCP | `writeDrillCycle()`, `onCircular()` | Not allowed under G43.4/G43.5 (programming manual 14). Arcs that are linearized are unaffected. |
 | Error for tool numbers outside 1–99 and 201–299 | `validateToolData()` | G100 reads T101–199 as pots and T901–930 as groups; T0 is invalid. |

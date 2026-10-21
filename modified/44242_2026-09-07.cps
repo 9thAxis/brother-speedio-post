@@ -168,10 +168,18 @@ properties = {
   },
   doubleTapWithdrawSpeed: {
     title      : "Double the tap withdraw speed",
-    description: "If enabled, an L value containing double the spindle speed (up to 6000) will be output in the G77 tapping cycle.",
+    description: "If enabled, an L value containing double the spindle speed (up to the maximum tapping speed) will be output in the G77 tapping cycle.",
     group      : "preferences",
     type       : "boolean",
     value      : true,
+    scope      : "post"
+  },
+  maximumTappingSpeed: {
+    title      : "Maximum tapping speed",
+    description: "Machine parameter 11000058 (Max. tapping speed), in rpm. The control alarms when a tapping cycle's S exceeds it, so posting stops instead; it also caps the doubled withdraw speed (L). Factory values: 6000 for 10K, 12K and 16K spindles, 8000 for 27K spindles.",
+    group      : "preferences",
+    type       : "integer",
+    value      : 6000,
     scope      : "post"
   },
   useStuckChipsDetection: {
@@ -422,7 +430,6 @@ var settings = {
 };
 
 var washdownCoolant = {on:400, off:401};
-var maximumTappingSpeed = 6000; // machine parameter 11000058 (Max. tapping speed) on the U500XD2 16K spindle
 var currentToolNumber = undefined;
 
 var probeVariables = {
@@ -432,9 +439,8 @@ var probeVariables = {
 };
 
 function defineMachine() {
-  // Kinematics come from the CAM setup's machine configuration (.mch). The U500XD2-5AX
-  // is an A+C trunnion (A tilts the table, C rotates it); the legacy hasAAxis / useTrunnion
-  // property toggles that defined kinematics from the post have been removed.
+  // Kinematics come from the CAM setup's machine configuration (.mch); the legacy hasAAxis /
+  // useTrunnion property toggles that defined kinematics from the post have been removed.
 
   if (!receivedMachineConfiguration) {
     // multiaxis settings
@@ -852,8 +858,8 @@ function warnShiftOrientation(cycle) {
 }
 
 function writeDrillCycle(cycle, x, y, z) {
-  if (cycleType.indexOf("tapping") != -1 && spindleSpeed > maximumTappingSpeed) {
-    error(subst(localize("Spindle speed %1 exceeds the maximum tapping speed of %2 (machine parameter 11000058)."), spindleSpeed, maximumTappingSpeed));
+  if (cycleType.indexOf("tapping") != -1 && spindleSpeed > getProperty("maximumTappingSpeed")) {
+    error(subst(localize("Spindle speed %1 exceeds the maximum tapping speed of %2 (machine parameter 11000058, 'Maximum tapping speed' property)."), spindleSpeed, getProperty("maximumTappingSpeed")));
     return;
   }
   if (state.tcpIsActive) { // canned cycles are not allowed under G43.4/G43.5
@@ -940,7 +946,7 @@ function writeDrillCycle(cycle, x, y, z) {
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
           unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
           unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
+          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, getProperty("maximumTappingSpeed"))) : ""
         );
       } else {
         writeBlock(
@@ -961,7 +967,7 @@ function writeDrillCycle(cycle, x, y, z) {
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
           unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
           unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
+          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, getProperty("maximumTappingSpeed"))) : ""
         );
       } else {
         writeBlock(
@@ -982,7 +988,7 @@ function writeDrillCycle(cycle, x, y, z) {
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
           unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
           unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
+          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, getProperty("maximumTappingSpeed"))) : ""
         );
       } else {
         writeBlock(
@@ -1009,7 +1015,7 @@ function writeDrillCycle(cycle, x, y, z) {
             "Q" + xyzFormat.format(cycle.incrementalDepth),
             unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
             unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-            getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
+            getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, getProperty("maximumTappingSpeed"))) : ""
           );
         } else { // G84/G74 does not support chip breaking
           error(localize("Tapping with chip breaking is not supported by the G74/G84 cycle."));
@@ -4064,7 +4070,7 @@ function setProbeAngle() {
     case "AXIS_ROT":
       // Upstream wrote #[5200 + offset * 20 + rotaryTableAxis + 4], which assumes Fanuc axis numbering (C = #5225 for G54).
       // On the D00 the rotaries are the 5th (A) and 6th (C) axes, so #5225 is most likely A. Refuse until confirmed on the control.
-      error(localize("Angle compensation through the rotary work offset is disabled: the C offset variable (#5225 or #5226) has not been confirmed on this control."));
+      error(localize("Angle compensation through the rotary work offset is disabled: the C offset variable (#5225 or #5226) has not been confirmed for the CNC-D00 axis numbering."));
       break;
     default:
       error(localize("Angular Probing is not supported for this machine configuration."));
