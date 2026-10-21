@@ -66,6 +66,9 @@ cmd_run() {
     # Only emit N numbers on tool changes so inserting/removing a line doesn't
     # shift every subsequent N and create noise in regression diffs.
     post_args+=(--property showSequenceNumbers '"toolChange"')
+    # The fixtures are in inches; the modified post refuses non-mm output unless this is set
+    # (the property is ignored by posts that don't define it).
+    post_args+=(--property allowInchOutput true)
     post_args+=("$cps" "$cnc" "$out")
     if "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
       if [[ -n "$expected_error" ]]; then
@@ -140,7 +143,7 @@ cmd_levels() {
       out="$out_dir/$id-$(basename "$fixture").nc"
       local -a post_args=(--log "${out%.nc}.log")
       [[ -n "${MACHINE_FILE:-}" ]] && post_args+=(--machine "$MACHINE_FILE")
-      post_args+=(--property useSmoothing "\"$id\"")
+      post_args+=(--property useSmoothing "\"$id\"" --property allowInchOutput true)
       post_args+=("$cps" "$FIXTURES_DIR/$fixture.cnc" "$out")
       if ! "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
         echo "  FAIL: level $id, $fixture did not post"

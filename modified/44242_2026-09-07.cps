@@ -277,6 +277,15 @@ properties = {
     type       : "boolean",
     value      : true,
     scope      : "post"
+  },
+  allowInchOutput: {
+    title      : "Allow inch output (tests only)",
+    description: "Posting stops unless the output unit is millimeters, because this machine is metric and the CNC-D00 has no G20/G21. Only the regression tests, whose CNC files are in inches, turn this on. Never use it for a program that will run on the machine.",
+    group      : "preferences",
+    type       : "boolean",
+    value      : false,
+    visible    : false,
+    scope      : "post"
   }
 };
 
@@ -464,6 +473,11 @@ function defineMachine() {
 }
 
 function onOpen() {
+  // The CNC-D00 has no G20/G21 and this machine is metric: inch values would run 25.4 times too small.
+  if (unit != MM && !getProperty("allowInchOutput")) {
+    error(localize("This machine runs in millimeters and the CNC-D00 has no G20/G21. Set the NC program output unit to millimeters."));
+    return;
+  }
   // define and enable machine configuration
   receivedMachineConfiguration = machineConfiguration.isReceived();
   if (typeof defineMachine == "function") {
