@@ -439,8 +439,9 @@ var probeVariables = {
 };
 
 function defineMachine() {
-  // Kinematics come from the CAM setup's machine configuration (.mch); the legacy hasAAxis /
-  // useTrunnion property toggles that defined kinematics from the post have been removed.
+  // Kinematics come from the CAM setup's machine configuration (.mch). The U500XD2-5AX
+  // is an A+C trunnion (A tilts the table, C rotates it); the legacy hasAAxis / useTrunnion
+  // property toggles that defined kinematics from the post have been removed.
 
   if (!receivedMachineConfiguration) {
     // multiaxis settings
