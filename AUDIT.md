@@ -224,7 +224,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 | G7 | G85/G89 E, G81 W/V/E/L, P on G83/G86 | Motion | Deferred |
 | G8a | `warningOnce` for the Blum warning (3257) | None | Recommended |
 | G8b | Duplicate G69 at start | None | Leave — harmless |
-| G8c | Corner cycles (≈1489) format X/Y through modal outputs | None | Investigate — a later move to the same X/Y could be dropped (suspected, not reproduced) |
+| G8c | Corner cycles (1517, 1544, 1554) format X/Y through modal outputs | Restores CAM motion | **Confirmed and fixed** — reproduced with a forced corner cycle: old post wrote `G65 P8810 Y2.5748` (X dropped, probe at the wrong X), fixed post writes `X1.9748 Y2.5748`. Upstream bug. |
 
 ## Closed during the audit (confirmed by all three verifiers)
 

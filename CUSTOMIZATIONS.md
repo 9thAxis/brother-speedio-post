@@ -184,6 +184,7 @@ These are validation errors and warnings only; none changes generated motion. Ea
 | Error for canned cycles and G02/G03/G02.4 under TCP | `writeDrillCycle()`, `onCircular()` | Not allowed under G43.4/G43.5 (programming manual 14). Arcs that are linearized are unaffected. |
 | Error for tool numbers outside 1–99 and 201–299 | `validateToolData()` | G100 reads T101–199 as pots and T901–930 as groups; T0 is invalid. |
 | Error when a rewind (retract and reconfigure) occurs | `onMoveToSafeRetractPosition()` | The TCP retract is `G100 T<current>`, which stops the spindle; nothing restarted it before re-entry. |
+| Corner cycles (O8815/O8816, Blum P8700 A1) write X/Y as arguments, not through the modal outputs | `writeProbeCycle()` | Upstream set the modal X/Y to the corner point, but the macro returns the probe to its start point; a later move to that X or Y was dropped (reproduced: `G65 P8810 Y2.5748` instead of `X1.9748 Y2.5748`), and a corner X/Y equal to the modal value was left off the macro call. Restores the CAM's motion. |
 | Dwells below 1 s are kept (minimum 0.001 s) | `onDwell()`, `writeDrillCycle()` | Upstream raised every dwell to 1 s; P is in seconds with Program unit = Base (011001 = 0). |
 | Warning when G73/G83 drop the CAM's peck reduction | `warnDegressivePecking()` | The cycles take a fixed Q. |
 | Warning when fine/back boring has a shift orientation | `warnShiftOrientation()` | The D00 shifts by user parameter 012004 (+X here), not by the CAM value. |

@@ -1514,7 +1514,7 @@ function writeProbeCycle(cycle, x, y, z) {
       }
       protectedProbeMove(cycle, x, y, z - cycle.depth);
       writeBlock(
-        gFormat.format(65), "P" + 8815, xOutput.format(cornerX), yOutput.format(cornerY),
+        gFormat.format(65), "P" + 8815, "X" + xyzFormat.format(cornerX), "Y" + xyzFormat.format(cornerY),
         cornerI != 0 ? "I" + xyzFormat.format(cornerI) : "",
         cornerJ != 0 ? "J" + xyzFormat.format(cornerJ) : "",
         "Q" + xyzFormat.format(cycle.probeOvertravel),
@@ -1541,7 +1541,7 @@ function writeProbeCycle(cycle, x, y, z) {
     protectedProbeMove(cycle, x, y, z - cycle.depth);
     if (getProperty("probingType") == "Renishaw") {
       writeBlock(
-        gFormat.format(65), "P" + 8816, xOutput.format(cornerX), yOutput.format(cornerY),
+        gFormat.format(65), "P" + 8816, "X" + xyzFormat.format(cornerX), "Y" + xyzFormat.format(cornerY),
         cornerI != 0 ? "I" + xyzFormat.format(cornerI) : "",
         cornerJ != 0 ? "J" + xyzFormat.format(cornerJ) : "",
         "Q" + xyzFormat.format(cycle.probeOvertravel),
@@ -1551,8 +1551,8 @@ function writeProbeCycle(cycle, x, y, z) {
       writeBlock(
         gFormat.format(65), "P" + 8700,
         "A1",
-        xOutput.format(cornerX),
-        yOutput.format(cornerY),
+        "X" + xyzFormat.format(cornerX),
+        "Y" + xyzFormat.format(cornerY),
         "Q" + xyzFormat.format(cycle.probeOvertravel),
         getProbingArguments(cycle, true)
       );
