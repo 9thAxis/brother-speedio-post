@@ -74,18 +74,11 @@ with "The NC program is in inches but the control unit is set to millimeters…"
 
 ## B. Air runs (no part, external Z +100)
 
-### B1. A and C directions — gates any TCP work (AUDIT §7.2)
-The machine file turns A about −X and C about −Z; G68.2 work does not depend on this sign, but
-the pre-index before G68.2 and all TCP motion do.
-1. In Fusion make a setup with one 3+2 operation at **A +30°, C +90°** (a short facing pass is
-   enough) and one with **A +60°, C 0°**. Post, and simulate with the machine model.
-2. Run single block. At the `G00 A… C…` block, compare the table with the simulation: the
-   direction the table tilts toward, and the direction C turns.
-3. **Pass:** both match the simulation. **Fail:** any mismatch — stop, do not run TCP programs,
-   and report which axis is reversed (the `.mch` needs fixing, not the post).
-4. Only if 2 passed: post a short **5-axis simultaneous** operation (TCP, G43.4) and run it in the
-   air at low feed override. **Pass:** the tool tip follows the path the simulation shows relative
-   to the table, with no drift as A/C move.
+### B1. A and C directions — closed, no test needed (AUDIT §7.2)
+TCP parts have already been cut on this machine with the Fusion post, and the machine file's
+rotation axes are unchanged since then (A about −X, C about −Z). Re-test only if the `.mch`
+kinematics change: run a 3+2 op at A +30°/C +90° in the air, single block, and compare the
+`G00 A… C…` move with Fusion's machine simulation.
 
 ### B2. Smoothing and TCP transitions
 Program, same tool: 3-axis op → 5-axis op → 3-axis op; then the same with a tool change between
@@ -162,7 +155,7 @@ C variable, test on a part with a known small skew (e.g. 1–2°):
 | A3 parameters | | | |
 | A4 probe T28 / H28 | | | |
 | A5 unit guard | | | |
-| B1 A direction / C direction / TCP | | | |
+| B1 A/C directions | closed — TCP used before, .mch axes unchanged | 2026-10-21 | |
 | B2 transitions | | | |
 | B3 explicit level | | | |
 | B4 tap L / dwell | | | |

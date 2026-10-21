@@ -18,7 +18,7 @@ Verification: 42 fixtures post, 3 stop with their expected errors
 explicit-level check 12/12; each new error and word checked with an instrumented post.
 
 **Open:** §1.1 machine check (`#5325`/`#5326` on G59), §2 (approach motion), §4.2 expansion,
-§6.6 (Mode B levels, owner), §6.7–§6.8, §7.2 (A/C direction), G1b, G6, G7, G8c. §6.1 is the
+§6.6 (Mode B levels, owner), §6.7–§6.8, G1b, G6, G7, G8c. §6.1 is the
 owner's (014501).
 
 ## Safety rule for every recommendation
@@ -221,10 +221,12 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 ## 7. Machine checks (no post change)
 
 - **7.1** `#5225` vs `#5226` — see 1.1.
-- **7.2 A and C directions:** the .mch turns A about −X and C about −Z; upstream's built-in
-  trunnion used +X / +Z. G53.1 solves G68.2 work, but the post pre-indexes from the .mch
-  (`G00 A30. C-90.` before G68.2) and TCP uses it directly. Confirm with the kinematic block
-  in a dry run.
+- **7.2 A and C directions — closed by field use.** The .mch turns A about −X and C about −Z
+  (upstream's built-in trunnion used +X / +Z). The owner has cut parts under TCP on this machine
+  with the Fusion post, which validates these directions, and the rotation axes
+  (`axis_of_rotation`) are identical in the machine file used then (now under `backup/`) and
+  the current one: A (−1, 0, 0) through (−284, 0, 50), C (0, 0, −1). Re-check only if the .mch
+  kinematics change.
 
 ## 8. Improvements
 
