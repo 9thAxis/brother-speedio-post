@@ -219,6 +219,15 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
   roughing → M285 (user-defined, PM 14.2.6.4), semi → M283 (most accuracy-heavy). Proposal:
   roughing → M284, semi → M280, semi-finishing → M281, finishing → M283. No motion change.
   **Owner decision.**
+  **Checked on the owner's control (2026-10-21):** the TCP levels are User Parameter 15
+  "5th-axis machining: By M code" 1550x1–1550x7 (DB 17425–17545). The backup (`U155000`–
+  `U155700`) matches the U500Xd2 factory column exactly. M285 = 100 on all overrides, i.e. the
+  same as no machining level (high speed) — a sensible roughing level, matching the intent of
+  the Mode A table the `[0, 5, 3, 4, 1, 2]` offsets come from (M265 = high speed). The real
+  inversion is semi-roughing → M283 (corner decel 2/2/10 %, accel 10 %), slower than finishing's
+  M282. Cycle time only; no change made. Origin: Autodesk applied Mode A level offsets
+  (PM 13-1 ~23760: 0 shape accuracy, 5 high speed, 3/4 surface, 1/2 shape) to M28x, whose D00
+  levels mean something else.
 - **6.7 The parameter backup folder `s500xd2-2026-10-12` is this U500XD2** (5-axis strokes,
   16K, 28 tools, T28 = `OMP400-4MM-01`). Rename.
 - **6.8 O8898 loads the probe as T28**; the Fusion library should use T28.
