@@ -1,6 +1,6 @@
 # Machine validation plan — U500XD2-5AX
 
-Validates the audit changes (`AUDIT.md`, commits ceba133 through 2c4e4d5) and settles the
+Validates the audit changes (`AUDIT.md`; every commit listed in its status section) and settles the
 open motion questions on the machine. Work through the parts in order: **A** moves nothing,
 **B** moves in the air with no part, **C** touches a part with the probe. Do not start a part
 until everything before it has passed.
@@ -23,7 +23,11 @@ until everything before it has passed.
 - **Air runs (part B):** no part or fixture on the table, or clamp only things well below the
   path. Shift everything up with the external work offset: Z of `#5203` (Workpiece coord zero
   screen, "EXT") = **+100.000**, and set it back to its previous value after part B. Avoid the
-  A −30° stroke end in test programs (use A +30° to +90°).
+  A −30° stroke end in 3+2 test programs (use A +30° to +90°). Under TCP (5-axis ops) this control
+  works in the table coordinate system (user parameter 150001 = 0): work offsets, the external
+  one included, are fixed to the table and tilt with it, so the +100 is along the table's normal,
+  not machine Z. At large A the path shifts sideways and will not line up with the simulation;
+  keep 5-axis (TCP) air runs within |A| ≤ 30°.
 
 Record each result in the table at the end.
 
@@ -54,14 +58,16 @@ Angle compensation is disabled in the post until this is known.
 **Expected (from the manual):** #5325 = 11.111 (A), #5326 = 22.222 (C). If so, upstream's
 `#5225` (G54) was writing the skew into **A**, and the post fix will use `#5226`.
 
-### A2. Renishaw protected-move feed and mode
-The post now leaves F off `G65 P8810`, so O8810 uses the control's settings.
-1. Read **#509** (fast feed, mm/min; O8724 resets it to 5000 if it is ≤ 1000 or > 10000).
-2. Read **#505** and note whether bit 64 (production mode) or bit 512 (prove-out mode) is set.
-   Production mode runs protected moves at 16000 XY / 10000 Z; prove-out halves the feeds.
+### A2. Renishaw protected-move feed
+The post now leaves F off `G65 P8810`, so O8810 uses the feeds O8724 derives from `#509`.
+1. Read **#505**. Bit 2048 ("optimised" mode) must be **off**: with it on, O8724 decodes `#509`
+   differently and the feeds below do not apply — stop and report.
+2. Read **#509**: the protected XY feed in mm/min; Z moves run at 0.6 × #509. O8724 resets it to
+   5000 if it is ≤ 1000 or > 10000.
 
-**Expected:** #509 = 5000 (XY 5000, Z 3000 mm/min), neither mode bit set. If production mode
-is on, decide whether that speed is acceptable for approach moves before part C.
+**Expected (Dec 2025 macro backup):** #505 = 1024, #509 = 5000 → XY 5000, Z 3000 mm/min.
+Production and prove-out mode (bits 64 / 512) don't apply: every `G65 P8832` the post writes
+clears them.
 
 ### A3. Parameters the post relies on
 Confirm on the parameter screens (values read from the 2026-10-12 backup):
@@ -98,6 +104,9 @@ them. Post with High accuracy level = Automatic.
 - **Pass:** no `<<TCP control command not possible>>`, `<<TCP under control>>` or
   `<<Unavailable modal for machining mode specification>>` alarms. In the 3-axis ops the screen
   shows the M298 machining mode (L2/L3/L4/L6); in the 5-axis op it shows the Mode B level (M28x).
+- Include a **5-axis roughing op** (≥ 0.5 mm stock to leave). It now gets **M284** (high speed +
+  smooth), which follows the programmed path less tightly than the old M285 (no level). **Pass:**
+  M284 in the program, smooth motion, no alarm.
 
 ### B3. Explicit high accuracy level
 Post a 3-axis op with High accuracy level = **Finishing high**. **Pass:** the program has
@@ -134,11 +143,19 @@ Run a WCS probe op (e.g. a rectangle boss or bore) on a known part.
   work offset matches an indicator check.
 
 ### C3. Protection actually trips (confirms G31 P2 is the probe input)
-In MDI with the probe on (`G65 P8832`), above a flat face of the part:
-`G65 P8810 Z<5 mm below the face> F500`.
-- **Pass:** the probe triggers on the face and the machine stops with **PATH OBSTRUCTED**.
-  **Fail:** it does not stop — stop using safe probing and report (the skip input setting is
-  wrong). Then `G65 P8833`.
+O8810 alarms (E70) unless a tool length offset is active, so start with the probe loaded and
+G43 on: either stop a C2 program in single block right after its `G65 P8832`, or in MDI run
+`G100 T28 G43 Z<a height clear of everything> H28` and then `G65 P8832`.
+1. With protected moves, put the stylus 10 mm above a flat face of the part:
+   `G65 P8810 X… Y…`, then `G65 P8810 Z<face + 10>`.
+2. Feed override low, hand on Feed hold: `G65 P8810 Z<face − 2> F200` (2 mm below the face, at
+   200 mm/min).
+- **Pass:** the probe touches the face and the machine stops with **PATH OBSTRUCTED**.
+- **Fail:** it keeps going — Feed hold. The overshoot is at most 2 mm, within the stylus
+  overtravel (check the OMP400 stylus spec before the test). Stop using safe probing and report
+  (the skip input is not the probe).
+3. Reset the alarm and back off with a plain move, not a protected one (the stylus may still be
+   deflected and would trip again): `G91 G01 Z5. F500`, then `G90`. Then `G65 P8833`.
 
 ### C4. Tool wear feedback at 0 % (if you use tool wear update)
 Probe op with "update tool wear" and error correction **0 %**. **Pass:** the program has `F0`, the

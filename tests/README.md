@@ -61,7 +61,7 @@ The fixtures are in inches, while the modified post stops when the output unit d
 
 Some fixtures exercise output the modified post deliberately refuses (for example `tcp with tsc` uses T0, which G100 does not accept). They are listed in `tests/expected-failures.txt` as `<fixture path>|<error text>`. On a `modified` run, a listed fixture passes only if posting stops with that error text; if it posts, or stops with a different error, it counts as a failure. Upstream runs ignore the list.
 
-Every fixture posts with the high accuracy level at Automatic, so the explicit levels get their own check. It posts one plain and one multi-axis fixture with each explicit `useSmoothing` choice and fails if the M298 L word or the Mode B code under TCP is not the one that choice should write (outputs and post logs under `tests/runs/levels/<label>/`). It applies to the modified post only, since upstream does not default to M298:
+Every fixture posts with the high accuracy level at Automatic, so the explicit levels get their own check. For each explicit `useSmoothing` choice it posts a plain fixture, a multi-axis fixture and the plain fixture with `smoothingMode` B, and fails if the M298 L word or the Mode B code is not the one that choice should write, or if the other family of codes appears (outputs and post logs under `tests/runs/levels/<label>/`). It applies to the modified post only, since upstream does not default to M298:
 
 ```bash
 ./tests/regression.sh levels modified/<new-label>.cps

@@ -70,6 +70,7 @@ cmd_run() {
     # its 'Control unit' property (posts that don't define the property ignore it).
     post_args+=(--property controlUnit '"IN"')
     post_args+=("$cps" "$cnc" "$out")
+    : > "$log"
     if "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
       if [[ -n "$expected_error" ]]; then
         failures=$((failures+1))
@@ -101,8 +102,9 @@ expected_failure() {
 }
 
 # Every fixture posts with useSmoothing at Automatic, so the explicit levels
-# are checked here: one plain and one multi-axis fixture per property id,
-# asserting the M298 L word and the Mode B code used under TCP.
+# are checked here, per property id: a plain fixture (M298 L word, no Mode B),
+# a multi-axis fixture (Mode B code under TCP, no M298) and the plain fixture
+# with smoothingMode B (Mode B code, no M298).
 LEVELS_PLAIN_FIXTURE="Milling/2D/face"
 LEVELS_TCP_FIXTURE="Milling/5x Simultaneous/5x contour"
 LEVELS_IDS=(0 1 2 3 4 5)
@@ -110,10 +112,14 @@ LEVELS_M298=("M298 L1" "M298 L2" "M298 L3" "M298 L4" "M298 L5" "M298 L6")
 LEVELS_MODEB=(M280 M284 M280 M282 M281 M283)
 
 check_level_output() {
-  local out="$1" pattern="$2" expected="$3" desc="$4" got
+  local out="$1" pattern="$2" expected="$3" desc="$4" forbidden="$5" got
   got=$(grep -oE "$pattern" "$out" | sort -u | paste -sd ' ' -)
   if [[ "$got" != "$expected" ]]; then
     echo "  FAIL: $desc wrote '$got', expected '$expected'"
+    return 1
+  fi
+  if grep -qE "$forbidden" "$out"; then
+    echo "  FAIL: $desc also wrote $(grep -oE "$forbidden" "$out" | sort -u | paste -sd ' ' -)"
     return 1
   fi
   if grep -q "no explicit Mode B mapping" "${out%.nc}.log"; then
@@ -128,7 +134,7 @@ cmd_levels() {
   [[ -f "$cps" ]] || { echo "error: cps not found: $cps" >&2; exit 1; }
   require_post_bin
 
-  local label out_dir failures=0 i id fixture out
+  local label out_dir failures=0 checks=0 i id case fixture out
   label=$(derive_label "$cps")
   out_dir="$RUNS_DIR/levels/$label"
   rm -rf "$out_dir"
@@ -139,24 +145,28 @@ cmd_levels() {
 
   for i in "${!LEVELS_IDS[@]}"; do
     id="${LEVELS_IDS[$i]}"
-    for fixture in "$LEVELS_PLAIN_FIXTURE" "$LEVELS_TCP_FIXTURE"; do
-      out="$out_dir/$id-$(basename "$fixture").nc"
+    for case in plain multi-axis mode-b; do
+      fixture="$LEVELS_PLAIN_FIXTURE"
+      [[ "$case" == "multi-axis" ]] && fixture="$LEVELS_TCP_FIXTURE"
+      out="$out_dir/$id-$case-$(basename "$fixture").nc"
       local -a post_args=(--log "${out%.nc}.log")
       [[ -n "${MACHINE_FILE:-}" ]] && post_args+=(--machine "$MACHINE_FILE")
       post_args+=(--property useSmoothing "\"$id\"" --property controlUnit '"IN"')
+      [[ "$case" == "mode-b" ]] && post_args+=(--property smoothingMode '"B"')
       post_args+=("$cps" "$FIXTURES_DIR/$fixture.cnc" "$out")
+      checks=$((checks+1))
       if ! "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
-        echo "  FAIL: level $id, $fixture did not post"
+        echo "  FAIL: level $id, $case did not post"
         failures=$((failures+1))
-      elif [[ "$fixture" == "$LEVELS_PLAIN_FIXTURE" ]]; then
-        check_level_output "$out" 'M298 L[0-9]+' "${LEVELS_M298[$i]}" "level $id, plain" || failures=$((failures+1))
+      elif [[ "$case" == "plain" ]]; then
+        check_level_output "$out" 'M298 L[0-9]+' "${LEVELS_M298[$i]}" "level $id, $case" 'M28[0-7]' || failures=$((failures+1))
       else
-        check_level_output "$out" 'M28[0-7]' "${LEVELS_MODEB[$i]}" "level $id, multi-axis" || failures=$((failures+1))
+        check_level_output "$out" 'M28[0-7]' "${LEVELS_MODEB[$i]}" "level $id, $case" 'M298' || failures=$((failures+1))
       fi
     done
   done
 
-  echo "Done: $((${#LEVELS_IDS[@]} * 2)) checks, $failures failed."
+  echo "Done: $checks checks, $failures failed."
   [[ $failures -eq 0 ]]
 }
 

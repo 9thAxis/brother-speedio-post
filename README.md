@@ -14,7 +14,7 @@ See [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) for the full list with rationale. In 
 - **Washdown coolant** — Enabled between operations for chip management in the enclosed work area.
 - **Double tap withdraw** — Takes advantage of the 16K spindle for faster G77 tapping cycles.
 - **Safe probing** — Once the probe is switched on, rapid moves in a probe operation use G65 P8810 (protected positioning with G31 P2 skip-on-trigger) instead of bare G0, at the protected feeds set on the control. Stops with a PATH OBSTRUCTED alarm if the probe contacts anything. The approach to the operation's clearance height (G100 tool call or initial G00) comes before the probe is on and is not protected.
-- **Refuses unsafe or unsupported output** — Posting stops with an error instead of writing code the D00 would alarm on or run wrongly: probing on a tilted plane, rotary angle compensation (until the C offset variable is confirmed), taps above 6000 rpm, G88, arcs or canned cycles under TCP, invalid G100 tool numbers, and rewinds. See [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #15.
+- **Refuses unsafe or unsupported output** — Posting stops with an error instead of writing code the D00 would alarm on or run wrongly: probing on a tilted plane, rotary angle compensation (until the C offset variable is confirmed), taps above the maximum tapping speed, G88, arcs or canned cycles under TCP, invalid G100 tool numbers, and rewinds. See [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #15.
 - **Stuck chips detection** — Optional M318 output at program start to monitor Z-axis load during tool changes and detect debris between spindle face and tool holder.
 
 ## Options

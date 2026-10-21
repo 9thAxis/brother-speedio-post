@@ -9,12 +9,12 @@ disagreements settled against the source. Verdicts below are the reconciled resu
 **Batch 1 (2026-10-21), no motion change — done.** §1.1 (angle compensation refused),
 §1.2 (O8810 without F, per the owner: the Renishaw settings on the control are the reference;
 also covers G5), §1.3, §1.4, §3.1–§3.3, §4.1, §4.2 (warning), §4.3, §4.4 (warning), §5.1
-(corrected fix, plus errors for G02/G03/G02.4 and canned cycles actually written under TCP),
+(corrected fix, plus errors for G02/G03/G02.4 written under TCP and for any drilling cycle under TCP),
 §5.2 (error on rewind), §6.2–§6.5, G8a. Documented in `CUSTOMIZATIONS.md` #9–#15.
 Verification: 42 fixtures post, 3 stop with their expected errors
 (`tests/expected-failures.txt`), 0 failures; the only output change is F removed from 12
 `G65 P8810` lines in four probing fixtures (no coordinate changes); with
-`useTiltedWorkplane` off the six 3+2 fixtures change only M298 L2 → M285 and M299 → M289;
+`useTiltedWorkplane` off the six 3+2 fixtures change only M298 L2 → M285 (M284 since 1f53614) and M299 → M289;
 explicit-level check 12/12; each new error and word checked with an instrumented post.
 
 **After batch 1 (2026-10-21) — done.** G8c corner cycles (72185ac); §1.5 unit mismatch guard
@@ -24,6 +24,20 @@ Machine validation plan: `MACHINE_VALIDATION.md`.
 
 §6.6 Mode B levels remapped to the D00 table (CUSTOMIZATIONS #16); #11's Mode A rationale
 corrected (Mode AIII is supported on the D00; removed to keep M298 as the one non-TCP system).
+
+**Commit review (2026-10-21).** Three independent reviewers (primary sources, behaviour diff,
+adversarial), each finding re-checked against the source and then by an independent verifier.
+Fixed: probe guard also refuses work planes rotated only about Z (G68.2 K≠0, or a C index with
+G68.2 off; rotated instances of rotary-patterned probe ops are now refused); corner cycles reset
+the modal X/Y after the macro so the next move is always written in full (the first fix dropped
+the move back to the start point, unverifiable for Blum's P8700); tool groups 901–930 allowed;
+the regression log is cleared per post and the levels check also covers smoothingMode B and fails
+on the wrong code family. Docs: the TCP drilling refusal (any cycle, so no drilling in 3+2 with
+G68.2 off), Mode B level meanings hold under TCP only, Renishaw feed explanation (`#505` bit 2048),
+validation plan C3 (needs G43 active; 2 mm overshoot test), A2, the external offset under TCP, a
+B2 check for M284 roughing. Partly refuted: "the angle refusal does not fire when the angle probe is the last operation" —
+for Renishaw it fires at that operation's end; with probingType Blum an outer-corner angle probe
+as the last operation posts without compensation (pre-existing, nothing harmful written).
 
 **Open:** §1.1 machine check (`#5325`/`#5326` on G59, validation A1), §6.7–§6.8. §6.1 is the owner's (014501). **Deferred** (optimisation or new motion, not
 pursued): §2 approach redesign, §4.2 expansion, G1b, G6, G7.
@@ -83,7 +97,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 - **Repro:** `angled probing.nc` lines 40–41: `G65 P8810 Z0.1969 F39.4` (1000 mm/min) then
   `G65 P8810 Z-0.1` — the descent to measuring depth runs at 3000 mm/min.
 - **Effect:** protected (stops on contact) but 3× the CAM feed; risk of stylus overtravel.
-- **Fix (no motion change, feed only):** force F on every P8810 call.
+- **Fix (done, feed only):** omit F on every P8810 so O8810 always uses the control's feeds (owner's choice: the Renishaw settings are the reference). See CUSTOMIZATIONS #14.
 
 ### 1.3 Probing under G68.2 is allowed — Upstream, default via our #4 (was A2)
 - **Code:** `writeProbeCycle` 1073–1076 errors only when `!useTiltedWorkplane`; 718–719
@@ -153,8 +167,8 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 ### 3.3 Tool numbers outside 1–99 / 201–299 not caught — Upstream (was B4)
 - `validateToolData` (check at ~2101) only warns above 28. PM ~12916 G100 T ranges.
 - Repro: `tcp with tsc` → `G100 T00 … G43.4 … H00 D00`.
-- Fix: `error()` when `tool.number < 1`. The `tcp with tsc` fixture will then fail to post;
-  renumber that fixture's tool.
+- Fix (done): `error()` outside 1–99, 201–299 and 901–930 (tool groups, added after the commit
+  review). The `tcp with tsc` fixture (T0) is listed in `tests/expected-failures.txt`.
 
 ## 4. Lower severity
 
@@ -172,7 +186,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 
 ### 4.3 Tap L word unformatted — Upstream, on by default via our #7 (was E4)
 - Code 894, 915, 936, 963. Repro: rpm 1909.8593 → `S1910`, `L3819.7186342`.
-- Fix (no motion change): `rpmFormat.format(Math.min(spindleSpeed * 2, 6000))`.
+- Fix (done): `rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed property))`.
 
 ### 4.4 Fine/back boring ignore Fusion's shift orientation — Upstream (was E3)
 - Code 970–990 writes no direction or V (orientation angle, PM ~11327/11809); the D00
@@ -222,7 +236,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
   roughing → M284, semi → M280, semi-finishing → M281, finishing → M283. No motion change.
   **Owner decision.**
   **Checked on the owner's control (2026-10-21):** the TCP levels are User Parameter 15
-  "5th-axis machining: By M code" 1550x1–1550x7 (DB 17425–17545). The backup (`U155000`–
+  "5th-axis machining: By M code" 155n01–155n07 (DB 17425–17545). The backup (`U155000`–
   `U155700`) matches the U500Xd2 factory column exactly. M285 = 100 on all overrides, i.e. the
   same as no machining level (high speed) — a sensible roughing level, matching the intent of
   the Mode A table the `[0, 5, 3, 4, 1, 2]` offsets come from (M265 = high speed). The real
@@ -230,7 +244,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
   M282. Cycle time only. Origin: Autodesk applied Mode A level offsets
   (PM 13-1 ~23760: 0 shape accuracy, 5 high speed, 3/4 surface, 1/2 shape) to M28x, whose D00
   levels mean something else. The offsets are correct for Mode AIII, which the D00 does support
-  (PM 13.1; parameters 1010x1–1017x8 populated on the control).
+  (PM 13.1; parameters 101n01–101n08 populated on the control).
   **Done (owner's decision):** remapped as proposed — CUSTOMIZATIONS #16.
 - **6.7 The parameter backup folder `s500xd2-2026-10-12` is this U500XD2** (5-axis strokes,
   16K, 28 tools, T28 = `OMP400-4MM-01`). Rename.
@@ -260,7 +274,7 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
 | G7 | G85/G89 E, G81 W/V/E/L, P on G83/G86 | Motion | Deferred |
 | G8a | `warningOnce` for the Blum warning (3257) | None | Recommended |
 | G8b | Duplicate G69 at start | None | Leave — harmless |
-| G8c | Corner cycles (1517, 1544, 1554) format X/Y through modal outputs | Restores CAM motion | **Confirmed and fixed** — reproduced with a forced corner cycle: old post wrote `G65 P8810 Y2.5748` (X dropped, probe at the wrong X), fixed post writes `X1.9748 Y2.5748`. Upstream bug. |
+| G8c | Corner cycles (`writeProbeCycle`, corner cases) format X/Y through modal outputs | Restores CAM motion | **Confirmed and fixed** — reproduced with a forced corner cycle: old post wrote `G65 P8810 Y2.5748` (X dropped, probe at the wrong X), fixed post writes `X1.9748 Y2.5748`. Upstream bug. |
 
 ## Closed during the audit (confirmed by all three verifiers)
 

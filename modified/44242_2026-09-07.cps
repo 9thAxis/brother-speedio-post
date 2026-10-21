@@ -126,7 +126,7 @@ properties = {
   },
   probingType: {
     title      : "Probing type",
-    description: "Specified what probing cycles are used on the machine.",
+    description: "Specified what probing cycles are used on the machine. Blum calls Blum's macros (O8700, O8703); select it only if they are installed. On a control with the Renishaw O88xx macros, O8700 is Renishaw's error macro.",
     group      : "probing",
     type       : "enum",
     values     : [
@@ -514,8 +514,9 @@ function onOpen() {
   // setup for proper smoothing mode
   switch (getProperty("smoothingMode")) {
   case "B":
-    // Mode B levels on the D00 (programming manual 14.2.6.4): M280 surface quality (medium), M281 + shape accuracy,
-    // M282 surface quality (high), M283 + shape accuracy, M284 high speed + smooth; M285-M287 user defined
+    // Mode B levels under TCP on the D00 (programming manual 14.2.6.4): M280 surface quality (medium), M281 + shape
+    // accuracy, M282 surface quality (high), M283 + shape accuracy, M284 high speed + smooth; M285-M287 user defined.
+    // Without TCP, M280-M287 select the Chapter 13 Mode B levels (user parameters 102n01-102n07) instead.
     settings.smoothing.roughing = 4; // M284
     settings.smoothing.semi = 0; // M280
     settings.smoothing.semifinishing = 1; // M281
@@ -821,7 +822,7 @@ function protectedProbeMove(_cycle, x, y, z) {
   var _z = zOutput.format(z);
   var _code = getProperty("probingType") == "Renishaw" ? 8810 : 8703;
   var feedrate = getParameter("operation:tool_feedProbeLink", _cycle.feedrate);
-  // O8810 does not keep F between calls; without F it uses the protected feeds set on the control (#509 XY, 0.6 x #509 Z)
+  // O8810 does not keep F between calls; without F it uses the protected feeds O8724 derives from #509 (XY #509, Z 0.6 x #509)
   var useControlFeeds = _code == 8810;
   if (_z && z >= getCurrentPosition().z) {
     writeBlock(gFormat.format(65), "P" + _code, _z, useControlFeeds ? "" : getFeed(feedrate)); // protected positioning move
@@ -1126,10 +1127,12 @@ function writeDrillCycle(cycle, x, y, z) {
 }
 
 function writeProbeCycle(cycle, x, y, z) {
-  // Renishaw cycles cannot run under coordinate rotation (Inspection Plus manual: cancel with G69),
-  // which a tilted probe operation gets from G68.2, so any probing needs the tool axis along +Z.
-  if (!isSameDirection(currentSection.workPlane.forward, new Vector(0, 0, 1))) {
-    error(localize("Probing is only supported with the tool axis along +Z. The probe cycles cannot run on a tilted work plane (G68.2)."));
+  // Renishaw cycles cannot run under coordinate rotation (Inspection Plus manual: cancel with G69). A work plane
+  // that is tilted, or only rotated about Z, gets G68.2 from setWorkPlane (or a rotary index with G68.2 off),
+  // so probing needs the WCS orientation.
+  if (!isSameDirection(currentSection.workPlane.forward, new Vector(0, 0, 1)) ||
+    !isSameDirection(currentSection.workPlane.right, new Vector(1, 0, 0))) {
+    error(localize("Probing is only supported in the WCS orientation. The probe cycles cannot run on a tilted or rotated work plane (G68.2)."));
     return;
   }
   var isMirrored = currentSection.getInternalPatternId && currentSection.getInternalPatternId() != currentSection.getPatternId();
@@ -1549,6 +1552,8 @@ function writeProbeCycle(cycle, x, y, z) {
         "Q" + xyzFormat.format(cycle.probeOvertravel),
         getProbingArguments(cycle, true)
       );
+      xOutput.reset(); // the macro moves the probe; write the next X/Y in full
+      yOutput.reset();
     } else {
       error(localize("XY inner corner probing is not supported."));
     }
@@ -1576,6 +1581,8 @@ function writeProbeCycle(cycle, x, y, z) {
         "Q" + xyzFormat.format(cycle.probeOvertravel),
         getProbingArguments(cycle, true)
       );
+      xOutput.reset(); // the macro moves the probe; write the next X/Y in full
+      yOutput.reset();
     } else {
       writeBlock(
         gFormat.format(65), "P" + 8700,
@@ -1585,6 +1592,8 @@ function writeProbeCycle(cycle, x, y, z) {
         "Q" + xyzFormat.format(cycle.probeOvertravel),
         getProbingArguments(cycle, true)
       );
+      xOutput.reset(); // the macro moves the probe; write the next X/Y in full
+      yOutput.reset();
     }
     break;
   case "probing-x-plane-angle":
@@ -2156,9 +2165,10 @@ function validateToolData() {
       var diameterOffset = section.getTool().diameterOffset;
       var comment = section.getParameter("operation-comment", "");
 
-      // G100 reads T1-99 and T201-299 as tools; T101-199 are magazine pots and T901-930 tool groups
-      if (!((toolNumber >= 1 && toolNumber <= 99) || (toolNumber >= 201 && toolNumber <= 299)) && !getProperty("toolAsName")) {
-        error(subst(localize("Tool number %1 is not valid for G100. Use 1 to 99 or 201 to 299."), toolNumber));
+      // G100, H and D read 1-99 and 201-299 as tools and 901-930 as tool groups; T101-199 are magazine pots
+      if (!((toolNumber >= 1 && toolNumber <= 99) || (toolNumber >= 201 && toolNumber <= 299) || (toolNumber >= 901 && toolNumber <= 930)) &&
+        !getProperty("toolAsName")) {
+        error(subst(localize("Tool number %1 is not valid for G100. Use 1 to 99 or 201 to 299 for a tool, or 901 to 930 for a tool group."), toolNumber));
       }
       if (toolNumber > _maximumToolNumber && !getProperty("toolAsName")) {
         warnings.toolNumber.values.push(SP + toolNumber + EOL);
@@ -3312,7 +3322,7 @@ function onRapid(_x, _y, _z) {
     }
     // Use protected positioning (G31 P2 skip-on-trigger) for all rapid moves when probe is active.
     // Prevents probe damage from premature contact on rapids inside a probe operation if WCS is wrong.
-    // No F: O8810 then runs at the protected feeds set on the control (#509 XY, 0.6 x #509 Z).
+    // No F: O8810 then runs at the protected feeds O8724 derives from #509 (XY #509, Z 0.6 x #509).
     if (tool.type == TOOL_PROBE && getProperty("useSafeProbing")) {
       if (getProperty("probingType") != "Renishaw") {
         warningOnce(localize("Safe probing is only supported for Renishaw probes. Blum approach moves will use standard rapids."), WARNING_SAFE_PROBING_BLUM);
