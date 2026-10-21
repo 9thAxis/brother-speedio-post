@@ -17,9 +17,14 @@ Verification: 42 fixtures post, 3 stop with their expected errors
 `useTiltedWorkplane` off the six 3+2 fixtures change only M298 L2 → M285 and M299 → M289;
 explicit-level check 12/12; each new error and word checked with an instrumented post.
 
-**Open:** §1.1 machine check (`#5325`/`#5326` on G59), §2 (approach motion), §4.2 expansion,
-§6.6 (Mode B levels, owner), §6.7–§6.8, G1b, G6, G7, G8c. §6.1 is the
-owner's (014501).
+**After batch 1 (2026-10-21) — done.** G8c corner cycles (72185ac); §1.5 unit mismatch guard
+with a `controlUnit` property (94b4185); `maximumTappingSpeed` property instead of a fixed 6000
+(8eff760); §7.2 closed by the owner's TCP use with unchanged .mch kinematics (cbe3000).
+Machine validation plan: `MACHINE_VALIDATION.md`.
+
+**Open:** §1.1 machine check (`#5325`/`#5326` on G59, validation A1), §6.6 (Mode B levels,
+owner), §6.7–§6.8. §6.1 is the owner's (014501). **Deferred** (optimisation or new motion, not
+pursued): §2 approach redesign, §4.2 expansion, G1b, G6, G7.
 
 ## Safety rule for every recommendation
 

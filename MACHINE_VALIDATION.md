@@ -1,6 +1,6 @@
 # Machine validation plan — U500XD2-5AX
 
-Validates the audit changes (`AUDIT.md`, commits ceba133, 72185ac, bcf0475) and settles the
+Validates the audit changes (`AUDIT.md`, commits ceba133 through 2c4e4d5) and settles the
 open motion questions on the machine. Work through the parts in order: **A** moves nothing,
 **B** moves in the air with no part, **C** touches a part with the probe. Do not start a part
 until everything before it has passed.
@@ -13,8 +13,8 @@ until everything before it has passed.
 - **Post in millimeters from your own Fusion setups**, with the post's *Control unit* at
   Millimeters. The test fixtures in `tests/fixtures/` are inch files for the regression harness:
   never run them on the machine. The post stops if the program unit differs from *Control unit*.
-- **Post with the committed post** `modified/44242_2026-09-07.cps` (commit bcf0475 or later) and
-  the current machine file (`brother u500Xd2.mch`).
+- **Post with the committed post** `modified/44242_2026-09-07.cps` (latest commit, uploaded to
+  Fusion — see A0) and the current machine file (`brother u500Xd2.mch`).
 - **Simulate first.** Run every program through Fusion machine simulation with the machine
   model before it goes to the control, and keep the simulation open next to the machine.
 - **First run of every program:** single block on, rapid override at the lowest setting, feed
@@ -28,6 +28,18 @@ until everything before it has passed.
 Record each result in the table at the end.
 
 ---
+
+## A0. Fusion uses the updated post (before anything else)
+
+The machine file points Fusion at `cloud://44242_2026-09-07.cps`, the copy in the Fusion cloud
+post library. The audit fixes kept the same file name, so Fusion keeps posting with the old copy
+until it is replaced.
+1. Upload `modified/44242_2026-09-07.cps` from this repo (latest commit) to the Fusion cloud post
+   library over the existing `44242_2026-09-07.cps`.
+2. Open the post dialog for an NC program on this machine. **Pass:** the properties include
+   **Control unit** and **Maximum tapping speed**.
+3. Post any probing operation. **Pass:** the `G65 P8810` lines have **no F word**.
+If either check fails, Fusion is still using the old post: stop and fix that first.
 
 ## A. At the control, no motion
 
@@ -150,6 +162,7 @@ C variable, test on a part with a known small skew (e.g. 1–2°):
 
 | Test | Result (pass / fail / value) | Date | Notes |
 |---|---|---|---|
+| A0 Fusion uses updated post | | | |
 | A1 A variable / C variable | | | |
 | A2 #509 / #505 | | | |
 | A3 parameters | | | |
