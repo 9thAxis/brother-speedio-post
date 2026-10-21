@@ -94,7 +94,7 @@ bump and how it affected the merge.
 
   2. **Explicit cancel when switching between M298 and Mode B** — When `setSmoothing` re-enables smoothing but the mode changes (M298→Mode B or vice versa), the old mode is explicitly canceled first (M299 or M289). This is critical for same-tool transitions between 3-axis and 5-axis sections, where `setSmoothing(false)` may not have been called (it is gated behind `insertToolCall || smoothing.cancel`). Without the explicit cancel, M298 would remain active when Mode B is issued, and the subsequent G43.4 TCP activation would alarm. A warning is also emitted if the smoothing level has no explicit Mode B mapping, to catch misconfigured manual overrides.
 
-  3. **Level mapping** — M298 and Mode B use different level numbering. The M298 level (set by `initializeSmoothing`) is mapped to the equivalent Mode B level by category: roughing→5, semi→3, semifinishing→1, finishing→2. Mappings are stored in `settings.smoothing.modeB*` (see #3).
+  3. **Level mapping** — M298 and Mode B use different level numbering. An automatic M298 level (set by `initializeSmoothing`) is mapped to the equivalent Mode B level by category: roughing→5, semi→3, semifinishing→1, finishing→2. Mappings are stored in `settings.smoothing.modeB*` (see #3). An explicit `useSmoothing` level uses the property's own `[0, 5, 3, 4, 1, 2]` mapping instead (see #12).
 
   4. **`setSmoothing` moved before tool call in `onSection()`** — Smoothing codes must be output before G100 (which activates G43.4 TCP internally). Moved from after coolant to before the `insertToolCall` block. Also moved before G100 in `onClose()`.
 
@@ -133,3 +133,21 @@ bump and how it affected the merge.
   2. **`useTrunnion` property** (and the `createAxis` block that configured an A+C trunnion from post-side) — described specifically as "A and C-axis", wrong kinematics for our B+C trunnion. Machine kinematics come from the `.mch` file in the CAM setup anyway.
   3. **`smoothingMode` value `"A"`** (and the `case "A":` branches in `onOpen` and `setSmoothing`) — Mode A outputs M260/M269, which is the legacy CNC-B00/C00 smoothing syntax. D00v does not support it. Mode B and M298 remain.
 - **Why:** These parameters could never produce correct output on this machine, and exposing them risks someone toggling one and getting wrong kinematics or invalid M-codes. Simplifies `defineMachine()` to rely purely on the CAM-provided machine config (which is the correct source of truth for axis ranges, trunnion layout, etc.).
+
+## 12. Explicit high accuracy levels write the level their title names
+
+- **Where:** `setSmoothing()` function (`grep 'isExplicitLevel'`)
+- **What:** The explicit `useSmoothing` choices have ids 0 to 5, which are offsets from level 1 (Standard = 0 … Finishing high = 5). Two fixes, both gated on `isExplicitLevel` (property id 0 to 5) so the Automatic levels (2, 3, 4, 6), which overlap that range, are left as they were:
+  1. **M298 branch** — writes `L` + (id + 1). Upstream writes the raw id, so every explicit choice lands one level below its title and Standard writes `M298 L0`, which turns high accuracy off (Programming Manual 13.3: L0 off, L1 Standard, L2 Rough, L3 Medium rough, L4 Medium rough S, L5 Finishing, L6 Finishing S).
+  2. **TCP fallback (#10)** — maps an explicit id through the property's `[0, 5, 3, 4, 1, 2]` table, as the plain Mode B branch does, instead of looking it up in `modeBLevelMap`, whose keys are the Automatic L numbers. Before, ids 0, 1 and 5 hit no entry (warning) and 1, 2, 3 and 5 wrote the wrong M28x code.
+
+  | Property choice   | M298 (upstream → ours) | Under TCP (before → after) |
+  |-------------------|------------------------|----------------------------|
+  | Standard          | L0 → L1                | M280 (warning) → M280      |
+  | Roughing          | L1 → L2                | M281 (warning) → M285      |
+  | Medium rough      | L2 → L3                | M285 → M283                |
+  | Medium rough high | L3 → L4                | M283 → M284                |
+  | Finishing         | L4 → L5                | M281 → M281                |
+  | Finishing high    | L5 → L6                | M285 (warning) → M282      |
+
+- **Why:** An explicit level must run the mode its title names. The M298 half is an upstream bug (upstream's `case "M298"` has the same `"L" + smoothing.level`), exposed by our switch to M298 (#1). It does not affect Automatic, which is why the fixture corpus never caught it: `tests/regression.sh levels` now checks each explicit level, plain and multi-axis.

@@ -47,14 +47,14 @@ If `useSmoothing` is changed from Automatic to a fixed level in the post propert
 | Property value | M298 level | Mode B code |
 |---|---|---|
 | Off | _(no output)_ | _(no output)_ |
-| Standard | M298 L0 | M280 |
-| Roughing | M298 L1 | M285 |
-| Medium rough | M298 L2 | M283 |
-| Medium rough high | M298 L3 | M284 |
-| Finishing | M298 L4 | M281 |
-| Finishing high | M298 L5 | M282 |
+| Standard | M298 L1 | M280 |
+| Roughing | M298 L2 | M285 |
+| Medium rough | M298 L3 | M283 |
+| Medium rough high | M298 L4 | M284 |
+| Finishing | M298 L5 | M281 |
+| Finishing high | M298 L6 | M282 |
 
-Note: manual override uses raw level numbers (0-5), which differ from the automatic mode levels (2, 3, 4, 6). Automatic is recommended — it picks the right level per operation based on your CAM setup.
+Note: the property ids (0-5) are offsets from level 1, so each choice writes the M298 level its title names (Programming Manual 13.3: L0 off, L1 Standard … L6 Finishing S). Upstream writes the raw id, one level too low (see [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #12). Automatic is recommended — it picks the right level per operation based on your CAM setup.
 
 ## Repo layout
 

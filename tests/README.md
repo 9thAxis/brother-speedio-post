@@ -33,10 +33,10 @@ find "$HOME/Library/Application Support/Autodesk/Autodesk Fusion 360" \
      -name '*.mch' -path '*CAMMachines*'
 ```
 
-Pick the entry matching your machine (for the U500XD2-5AX, the filename starts with `_brother u500Xd2.`) and paste it as the `MACHINE_FILE` value, wrapped in double quotes so the spaces survive. Example:
+Pick the entry matching your machine (for the U500XD2-5AX, the file is `brother u500Xd2.mch`; skip any copy under a `backup/` folder, which Fusion no longer updates) and paste it as the `MACHINE_FILE` value, wrapped in double quotes so the spaces survive. Example:
 
 ```bash
-MACHINE_FILE="$HOME/Library/Application Support/Autodesk/Autodesk Fusion 360/<userhash>/W.login/M2/<orghash>/CAMMachines/_brother u500Xd2.<uuid>.mch"
+MACHINE_FILE="$HOME/Library/Application Support/Autodesk/Autodesk Fusion 360/<userhash>/W.login/M2/<orghash>/CAMMachines/brother u500Xd2.mch"
 ```
 
 `POST_BIN` is auto-detected on macOS from the Fusion install — leave it commented unless auto-detect fails or you want to pin a specific build. Fixtures live under `tests/fixtures/` (committed — see attribution below).
@@ -55,6 +55,12 @@ After `./update.sh` has saved the new `upstream/<new-label>.cps` and bootstrappe
 ./tests/regression.sh diff modified <prev-label> <new-label>   # the regression check
 ./tests/regression.sh diff upstream <prev-label> <new-label>   # what upstream changed
 ./tests/regression.sh diff-pair <new-label>                    # what our customizations do
+```
+
+Every fixture posts with the high accuracy level at Automatic, so the explicit levels get their own check. It posts one plain and one multi-axis fixture with each explicit `useSmoothing` choice and fails if the M298 L word or the Mode B code under TCP is not the one that choice should write (outputs and post logs under `tests/runs/levels/<label>/`). It applies to the modified post only, since upstream does not default to M298:
+
+```bash
+./tests/regression.sh levels modified/<new-label>.cps
 ```
 
 To see a full diff on one file:

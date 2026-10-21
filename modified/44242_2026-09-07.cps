@@ -544,7 +544,9 @@ function setSmoothing(mode) {
   // for smoothingMode B mapping is required for smoothing level value
   var propertyBaseLevel = parseInt(getProperty("useSmoothing"), 10);
   propertyBaseLevel = isNaN(propertyBaseLevel) ? -1 : propertyBaseLevel;
-  var mappedLevel = (propertyBaseLevel >= 0 && propertyBaseLevel <= 5) ? [0, 5, 3, 4, 1, 2][propertyBaseLevel] : smoothing.level;
+  // explicit property levels (ids 0-5) count from level 1, automatic levels are already M298 L numbers
+  var isExplicitLevel = propertyBaseLevel >= 0 && propertyBaseLevel <= 5;
+  var mappedLevel = isExplicitLevel ? [0, 5, 3, 4, 1, 2][propertyBaseLevel] : smoothing.level;
   switch (getProperty("smoothingMode")) {
   case "B":
     writeBlock(mFormat.format(mode ? 280 + mappedLevel : 289));
@@ -566,14 +568,15 @@ function setSmoothing(mode) {
           writeBlock(mFormat.format(299));
         }
         // M298 is incompatible with G43.4/G43.5 TCP — use Mode B (M280-M287) instead.
-        // Map M298 level to the equivalent Mode B level by smoothing category.
+        // Map an automatic M298 level to the equivalent Mode B level by smoothing category.
+        // An explicit level uses the property's own Mode B mapping, as the plain Mode B branch does.
         var modeBLevelMap = {
           [settings.smoothing.roughing]: settings.smoothing.modeBRoughing,
           [settings.smoothing.semi]: settings.smoothing.modeBSemi,
           [settings.smoothing.semifinishing]: settings.smoothing.modeBSemifinishing,
           [settings.smoothing.finishing]: settings.smoothing.modeBFinishing
         };
-        var modeBLevel = modeBLevelMap[smoothing.level];
+        var modeBLevel = isExplicitLevel ? mappedLevel : modeBLevelMap[smoothing.level];
         if (modeBLevel === undefined) {
           warning(subst("Smoothing level '%1' has no explicit Mode B mapping — using raw level.", smoothing.level));
           modeBLevel = smoothing.level;
@@ -585,7 +588,7 @@ function setSmoothing(mode) {
         if (smoothing.usedModeB && smoothing.isActive) {
           writeBlock(mFormat.format(289));
         }
-        writeBlock(mFormat.format(298), "L" + smoothing.level);
+        writeBlock(mFormat.format(298), "L" + (isExplicitLevel ? smoothing.level + 1 : smoothing.level)); // M298 L0 is off, L1 is Standard
         smoothing.usedModeB = false;
       }
     }

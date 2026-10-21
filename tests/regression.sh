@@ -76,6 +76,66 @@ cmd_run() {
   [[ $failures -eq 0 ]]
 }
 
+# Every fixture posts with useSmoothing at Automatic, so the explicit levels
+# are checked here: one plain and one multi-axis fixture per property id,
+# asserting the M298 L word and the Mode B code used under TCP.
+LEVELS_PLAIN_FIXTURE="Milling/2D/face"
+LEVELS_TCP_FIXTURE="Milling/5x Simultaneous/5x contour"
+LEVELS_IDS=(0 1 2 3 4 5)
+LEVELS_M298=("M298 L1" "M298 L2" "M298 L3" "M298 L4" "M298 L5" "M298 L6")
+LEVELS_MODEB=(M280 M285 M283 M284 M281 M282)
+
+check_level_output() {
+  local out="$1" pattern="$2" expected="$3" desc="$4" got
+  got=$(grep -oE "$pattern" "$out" | sort -u | paste -sd ' ' -)
+  if [[ "$got" != "$expected" ]]; then
+    echo "  FAIL: $desc wrote '$got', expected '$expected'"
+    return 1
+  fi
+  if grep -q "no explicit Mode B mapping" "${out%.nc}.log"; then
+    echo "  FAIL: $desc warned about a missing Mode B mapping"
+    return 1
+  fi
+}
+
+cmd_levels() {
+  local cps="${1:-}"
+  [[ -n "$cps" ]] || { echo "usage: $0 levels <path-to-cps>" >&2; exit 1; }
+  [[ -f "$cps" ]] || { echo "error: cps not found: $cps" >&2; exit 1; }
+  require_post_bin
+
+  local label out_dir failures=0 i id fixture out
+  label=$(derive_label "$cps")
+  out_dir="$RUNS_DIR/levels/$label"
+  rm -rf "$out_dir"
+  mkdir -p "$out_dir"
+
+  echo "Posting $(basename "$cps") at each explicit high accuracy level"
+  echo "  output:  $out_dir"
+
+  for i in "${!LEVELS_IDS[@]}"; do
+    id="${LEVELS_IDS[$i]}"
+    for fixture in "$LEVELS_PLAIN_FIXTURE" "$LEVELS_TCP_FIXTURE"; do
+      out="$out_dir/$id-$(basename "$fixture").nc"
+      local -a post_args=(--log "${out%.nc}.log")
+      [[ -n "${MACHINE_FILE:-}" ]] && post_args+=(--machine "$MACHINE_FILE")
+      post_args+=(--property useSmoothing "\"$id\"")
+      post_args+=("$cps" "$FIXTURES_DIR/$fixture.cnc" "$out")
+      if ! "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
+        echo "  FAIL: level $id, $fixture did not post"
+        failures=$((failures+1))
+      elif [[ "$fixture" == "$LEVELS_PLAIN_FIXTURE" ]]; then
+        check_level_output "$out" 'M298 L[0-9]+' "${LEVELS_M298[$i]}" "level $id, plain" || failures=$((failures+1))
+      else
+        check_level_output "$out" 'M28[0-7]' "${LEVELS_MODEB[$i]}" "level $id, multi-axis" || failures=$((failures+1))
+      fi
+    done
+  done
+
+  echo "Done: $((${#LEVELS_IDS[@]} * 2)) checks, $failures failed."
+  [[ $failures -eq 0 ]]
+}
+
 summarize_diff() {
   local dir_a="$1" dir_b="$2"
   local changed=0 only_a=0 only_b=0
@@ -160,7 +220,9 @@ commands:
                                        (the regression check).
   diff-pair <label>                   Compare upstream vs modified at a given
                                        label (inspect what our changes produce).
-  list                                List available labeled runs.
+  levels <cps>                        Post with each explicit high accuracy level
+                                       and check the M298 L / M28x words written.
+  list                               List available labeled runs.
 
 environment (override via tests/post.env):
   POST_BIN        Path to Autodesk post binary (auto-detected on macOS).
@@ -174,6 +236,7 @@ case "${1:-}" in
   diff)      shift; cmd_diff "$@" ;;
   diff-pair) shift; cmd_diff_pair "$@" ;;
   show)      shift; cmd_show "$@" ;;
+  levels)    shift; cmd_levels "$@" ;;
   list)      cmd_list ;;
   ""|-h|--help|help) usage ;;
   *) echo "unknown command: $1" >&2; usage; exit 1 ;;
