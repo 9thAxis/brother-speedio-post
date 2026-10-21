@@ -76,12 +76,13 @@ bump and how it affected the merge.
 - **To enable:** `value: true`
 - **Why:** Outputs M318 at program start to enable Z-axis load monitoring during tool changes. The D00 compares each tool change load signature against a learned baseline to detect chips or debris stuck between the spindle face and tool holder. Only useful once your magazine is stable — the detection compares against previously recorded load profiles, so if you're frequently swapping tools in/out of the magazine, the baselines won't be meaningful and you'll get false alarms. Enable this for production runs where the tool lineup is settled.
 
-## 9. Safe probing — protected approach moves
+## 9. Safe probing — protected rapids inside probe operations
 
 - **Where:** `useSafeProbing` property definition (`grep 'useSafeProbing'`) and `onRapid()` function (`grep 'function onRapid'`)
 - **Default:** `value: true`
-- **What:** Adds a `useSafeProbing` property and modifies `onRapid()` to use G65 P8810 (protected positioning with G31 P2 skip-on-trigger) for all rapid moves when the probe is active. Splits combined XYZ rapids into safe Z-up → XY → Z-down ordering. Only works with Renishaw probes — if `probingType` is set to Blum, a warning is emitted and approach moves fall back to standard G0 rapids.
-- **Why:** The stock post only uses protected positioning during the probing cycle itself (`protectedProbeMove`). The initial approach rapids from the tool change position to the probing area use regular G0 — if WCS is wrong, the probe crashes into the part with no trigger detection. With this enabled, every rapid move with the probe in the spindle goes through O8810, which stops with a PATH OBSTRUCTED alarm on premature contact. Tradeoff: approach moves use F5000 instead of true G0 rapid, so disable for production when you trust your WCS and want maximum speed.
+- **What:** Adds a `useSafeProbing` property and modifies `onRapid()` to use G65 P8810 (protected positioning with G31 P2 skip-on-trigger) for rapid moves made while the probe tool is active. Splits combined XYZ rapids into safe Z-up → XY → Z-down ordering. No F word is written, so O8810 runs at the protected feeds set on the control (see #14). Only works with Renishaw probes — if `probingType` is set to Blum, a warning is emitted once and these moves fall back to standard G0 rapids.
+- **What it does not cover:** the approach to the operation's clearance height. With a tool change, `G100 T.. X Y G43 Z.. H..` moves XY at ATC height and rapids Z down to the clearance plane; for the same tool, `writeInitialPositioning` writes G00. Both happen before `G65 P8832` switches the probe on, so they are not protected. This matches upstream and Renishaw's documented practice (move to a safe plane, then activate the probe). Protecting it would change the approach motion; see AUDIT.md §2.
+- **Why:** The stock post only uses protected positioning during the probing cycle itself (`protectedProbeMove`). With this enabled, rapids between moves of a probe operation (after the probe is on) also go through O8810, which stops with a PATH OBSTRUCTED alarm on premature contact. Tradeoff: those moves run at the protected feed instead of true G0 rapid, so disable for production when you trust your WCS and want maximum speed.
 
 ## 10. M298 / TCP incompatibility — automatic Mode B fallback for multi-axis
 
@@ -99,6 +100,8 @@ bump and how it affected the merge.
   4. **`setSmoothing` moved before tool call in `onSection()`** — Smoothing codes must be output before G100 (which activates G43.4 TCP internally). Moved from after coolant to before the `insertToolCall` block. Also moved before G100 in `onClose()`.
 
   5. **`initializeSmoothing()` TCP transition detection** — Forces smoothing re-output when switching between TCP and non-TCP sections. Without this, the `isDifferent` guard in `setSmoothing()` would skip output when the smoothing level is the same but the required M-code changes (M298 vs M280).
+
+  Both `setSmoothing()` and `initializeSmoothing()` decide TCP with `sectionUsesTCP(section)` = `isMultiAxis() || isTCPSupportedByOperation(section)`, evaluated from the section itself. `setSmoothing()` runs before `defineWorkPlane()` sets `tcp.isSupportedByOperation` and before the section is optimized, so reading those gave a stale answer: with `useTiltedWorkplane` off, 3+2 sections run under G43.4 and used to get `M298 L2` before `G100 … G43.4` (alarm). They now get Mode B; default output is unchanged.
 
 - **Why:** Without this, any program mixing 3-axis and 5-axis operations with smoothing enabled would alarm on the first multi-axis section. The D00 manual explicitly states M280-M287 is valid regardless of TCP state, making it the correct choice for 5-axis work.
 
@@ -129,8 +132,8 @@ bump and how it affected the merge.
 
 - **Where:** Property definitions at the top of the file and the smoothing mode switches (`grep 'hasAAxis\|useTrunnion\|case "A"'`)
 - **What:** Removed three properties / code paths that are invalid for the U500XD2-5AX + CNC-D00v combination:
-  1. **`hasAAxis` property** (and the `createAxis` block that configured an A rotary from post-side) — the U500XD2 trunnion is B+C, no A axis.
-  2. **`useTrunnion` property** (and the `createAxis` block that configured an A+C trunnion from post-side) — described specifically as "A and C-axis", wrong kinematics for our B+C trunnion. Machine kinematics come from the `.mch` file in the CAM setup anyway.
+  1. **`hasAAxis` property** (and the `createAxis` block that configured an A rotary from post-side) — a single A rotary, not this machine's trunnion.
+  2. **`useTrunnion` property** (and the `createAxis` block that configured an A+C trunnion from post-side) — the U500XD2 is in fact an A+C trunnion (A tilts the table −30° to 120°, C rotates it; Operation manual I §8), so this was not wrong kinematics, but defining kinematics in the post conflicts with the `.mch` in the CAM setup, which is the source of truth. The `.mch` turns A about −X and C about −Z where this block used +X / +Z. The dead `useTCP` reference this left in `defineMachine()` has been removed.
   3. **`smoothingMode` value `"A"`** (and the `case "A":` branches in `onOpen` and `setSmoothing`) — Mode A outputs M260/M269, which is the legacy CNC-B00/C00 smoothing syntax. D00v does not support it. Mode B and M298 remain.
 - **Why:** These parameters could never produce correct output on this machine, and exposing them risks someone toggling one and getting wrong kinematics or invalid M-codes. Simplifies `defineMachine()` to rely purely on the CAM-provided machine config (which is the correct source of truth for axis ranges, trunnion layout, etc.).
 
@@ -151,3 +154,36 @@ bump and how it affected the merge.
   | Finishing high    | L5 → L6                | M285 (warning) → M282      |
 
 - **Why:** An explicit level must run the mode its title names. The M298 half is an upstream bug (upstream's `case "M298"` has the same `"L" + smoothing.level`), exposed by our switch to M298 (#1). It does not affect Automatic, which is why the fixture corpus never caught it: `tests/regression.sh levels` now checks each explicit level, plain and multi-axis.
+
+## 13. Commissioning mode — M0 after inspection operations
+
+- **Where:** `commissioningMode` property definition (`grep 'commissioningMode'`); used in `onSectionEnd()`
+- **Default:** `value: true`
+- **What:** Upstream's `onSectionEnd()` already calls `getProperty("commissioningMode")` to write M0 after every inspection operation except the last, but upstream never declares the property, so the stop never fires there. We declare it (commit 7bb7d41) and default it to on.
+- **Limits:** it only fires for inspection (inspect surface) operations, not for WCS or geometry probing, and the M0 comes before the probe is switched off (P8833).
+- **Why:** Lets the operator check measurements before the program continues while a setup is being commissioned. Turn off for production.
+
+## 14. Renishaw protected moves use the control's feeds
+
+- **Where:** `protectedProbeMove()` (`grep 'useControlFeeds'`) and the safe probing branch of `onRapid()`
+- **What:** `G65 P8810` is written without F. Upstream writes the probe tool's link feed (`tool_feedProbeLink`) on the first move and then drops F through the modal feed output.
+- **Why:** O8810 keeps F in a local variable, so F is not carried between calls; a call without F uses the protected feeds set on the control by O8724 — `#119` = `#509` for XY and `#113` = 0.6 × `#509` for Z (5000 / 3000 mm/min unless `#509` is changed), with the prove-out and production mode overrides Renishaw built in. Upstream's mix meant the descent to measuring depth (no F) ran at 3000 mm/min right after a move at the CAM link feed. The Renishaw settings on the control are the reference. Blum (P8703) moves keep upstream's feeds.
+
+## 15. Refuse what the control would alarm on, or would run wrongly
+
+These are validation errors and warnings only; none changes generated motion. Each is checked by the regression run or by an instrumented post in the audit (see AUDIT.md).
+
+| Check | Where | Reason |
+|---|---|---|
+| Error for any probe operation whose tool axis is not +Z | `writeProbeCycle()` | Renishaw cycles cannot run under coordinate rotation (Inspection Plus manual, "cancel code G69"); upstream only refused WCS probing, and only with `useTiltedWorkplane` off. |
+| Error instead of rotary-offset angle compensation (`AXIS_ROT`) | `setProbeAngle()` | The slot assumes Fanuc numbering (`#5225` = C for G54). On the D00 the rotaries are the 5th (A) and 6th (C) axes, so `#5225` is most likely A. Disabled until confirmed on the control. |
+| 0 % tool wear feedback writes `F0` | `getProbingArguments()` | Upstream wrote `F100` for 0 % (a 100× correction); the macro expects 0 to 1. |
+| Error when a tap's spindle speed exceeds 6000 | `writeDrillCycle()`, `maximumTappingSpeed` | Machine parameter 11000058 (Max. tapping speed) = 6000; G77/G78/G84 alarm above it. |
+| Tap `L` word formatted through `rpmFormat` and capped at `maximumTappingSpeed` | `writeDrillCycle()` | A fractional rpm printed as `L3819.7186342`. |
+| Error for manual boring | `writeDrillCycle()` | Upstream wrote G88, which the D00 does not have. |
+| Error for canned cycles and G02/G03/G02.4 under TCP | `writeDrillCycle()`, `onCircular()` | Not allowed under G43.4/G43.5 (programming manual 14). Arcs that are linearized are unaffected. |
+| Error for tool numbers outside 1–99 and 201–299 | `validateToolData()` | G100 reads T101–199 as pots and T901–930 as groups; T0 is invalid. |
+| Error when a rewind (retract and reconfigure) occurs | `onMoveToSafeRetractPosition()` | The TCP retract is `G100 T<current>`, which stops the spindle; nothing restarted it before re-entry. |
+| Dwells below 1 s are kept (minimum 0.001 s) | `onDwell()`, `writeDrillCycle()` | Upstream raised every dwell to 1 s; P is in seconds with Program unit = Base (011001 = 0). |
+| Warning when G73/G83 drop the CAM's peck reduction | `warnDegressivePecking()` | The cycles take a fixed Q. |
+| Warning when fine/back boring has a shift orientation | `warnShiftOrientation()` | The D00 shifts by user parameter 012004 (+X here), not by the CAM value. |

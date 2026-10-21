@@ -13,7 +13,8 @@ See [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) for the full list with rationale. In 
 - **Safe start block** — Outputs `M299` and `G69` at program start to cancel residual M298 machining mode and workplane rotation from previously aborted programs.
 - **Washdown coolant** — Enabled between operations for chip management in the enclosed work area.
 - **Double tap withdraw** — Takes advantage of the 16K spindle for faster G77 tapping cycles.
-- **Safe probing** — All rapid moves with the probe active use G65 P8810 (protected positioning with G31 P2 skip-on-trigger) instead of bare G0. Stops with a PATH OBSTRUCTED alarm if the probe contacts anything during approach, preventing probe damage from wrong WCS.
+- **Safe probing** — Once the probe is switched on, rapid moves in a probe operation use G65 P8810 (protected positioning with G31 P2 skip-on-trigger) instead of bare G0, at the protected feeds set on the control. Stops with a PATH OBSTRUCTED alarm if the probe contacts anything. The approach to the operation's clearance height (G100 tool call or initial G00) comes before the probe is on and is not protected.
+- **Refuses unsafe or unsupported output** — Posting stops with an error instead of writing code the D00 would alarm on or run wrongly: probing on a tilted plane, rotary angle compensation (until the C offset variable is confirmed), taps above 6000 rpm, G88, arcs or canned cycles under TCP, invalid G100 tool numbers, and rewinds. See [CUSTOMIZATIONS.md](CUSTOMIZATIONS.md) #15.
 - **Stuck chips detection** — Optional M318 output at program start to monitor Z-axis load during tool changes and detect debris between spindle face and tool holder.
 
 ## Options
@@ -22,7 +23,8 @@ These properties can be toggled in Fusion's post processor dialog:
 
 | Property | Default | Description |
 |---|---|---|
-| Enable safe probing | ON | Uses protected positioning (O8810) for all probe approach moves instead of G0 rapid. Prevents probe damage if WCS is wrong. Disable for maximum speed in production when you trust your WCS. |
+| Enable safe probing | ON | Uses protected positioning (O8810) instead of G0 for rapids inside probe operations once the probe is on. The approach to clearance height is not covered. Disable for maximum speed in production when you trust your WCS. |
+| Commissioning mode | ON | Stops (M0) after each inspection operation so the operator can check measurements. Disable for production runs. |
 | Stuck chips detection | OFF | Outputs M318 at program start to enable Z-axis load monitoring during tool changes. Only useful once your magazine tool lineup is stable — frequent tool swaps cause false alarms against the learned baselines. |
 
 ## Smoothing level mapping

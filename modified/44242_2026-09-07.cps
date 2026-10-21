@@ -138,7 +138,7 @@ properties = {
   },
   useSafeProbing: {
     title      : "Enable safe probing",
-    description: "Uses protected positioning (G31 P2 skip-on-trigger via O8810) for all rapid moves when the probe is active, not just during measurement cycles. If the probe contacts anything during approach moves, the machine stops with a PATH OBSTRUCTED alarm instead of crashing the probe. Approach moves use feedrate (F5000) instead of true rapid (G0), so disable this if you trust your WCS and want maximum speed in production.",
+    description: "Uses protected positioning (G31 P2 skip-on-trigger via O8810) for the rapid moves of a probe operation once the probe is switched on, not just inside the measuring cycles. If the probe touches anything during those moves, the machine stops with a PATH OBSTRUCTED alarm. The approach to the operation's clearance height (the G100 tool call, or the initial G00 positioning for the same tool) happens before the probe is switched on and is not protected. Protected moves run at the feeds set on the control (#509), so disable this if you trust your WCS and want maximum speed in production.",
     group      : "probing",
     type       : "boolean",
     value      : true,
@@ -410,6 +410,7 @@ var settings = {
 };
 
 var washdownCoolant = {on:400, off:401};
+var maximumTappingSpeed = 6000; // machine parameter 11000058 (Max. tapping speed) on the U500XD2 16K spindle
 var currentToolNumber = undefined;
 
 var probeVariables = {
@@ -420,8 +421,8 @@ var probeVariables = {
 
 function defineMachine() {
   // Kinematics come from the CAM setup's machine configuration (.mch). The U500XD2-5AX
-  // is a B+C trunnion — the legacy hasAAxis / useTrunnion property toggles that
-  // configured an A-axis or A+C trunnion from the post have been removed.
+  // is an A+C trunnion (A tilts the table, C rotates it); the legacy hasAAxis / useTrunnion
+  // property toggles that defined kinematics from the post have been removed.
 
   if (!receivedMachineConfiguration) {
     // multiaxis settings
@@ -446,7 +447,7 @@ function defineMachine() {
     // multi-axis feedrates
     if (machineConfiguration.isMultiAxisConfiguration()) {
       machineConfiguration.setMultiAxisFeedrate(
-        useTCP ? FEED_FPM : getProperty("useInverseTime") ? FEED_INVERSE_TIME : FEED_DPM,
+        getProperty("useInverseTime") ? FEED_INVERSE_TIME : FEED_DPM,
         9999.999, // maximum output value for inverse time feed rates
         getProperty("useInverseTime") ? INVERSE_MINUTES : DPM_COMBINATION, // INVERSE_MINUTES/INVERSE_SECONDS or DPM_COMBINATION/DPM_STANDARD
         0.5, // tolerance to determine when the DPM feed has changed
@@ -533,6 +534,12 @@ function onOpen() {
   validateCommonParameters();
 }
 
+// True when the section runs under G43.4/G43.5. Evaluated from the section itself because setSmoothing
+// runs before defineWorkPlane updates tcp.isSupportedByOperation and before the section is optimized.
+function sectionUsesTCP(_section) {
+  return _section.isMultiAxis() || isTCPSupportedByOperation(_section);
+}
+
 function setSmoothing(mode) {
   if (mode == smoothing.isActive && (!mode || !smoothing.isDifferent) && !smoothing.force) {
     return; // return if smoothing is already active or is not different
@@ -561,8 +568,7 @@ function setSmoothing(mode) {
       }
       smoothing.usedModeB = false;
     } else {
-      var useTCP = currentSection.isMultiAxis() || (currentSection.isOptimizedForMachine() && tcp.isSupportedByOperation);
-      if (useTCP) {
+      if (sectionUsesTCP(currentSection)) {
         // Cancel M298 if switching from M298 to Mode B (required before TCP can activate)
         if (!smoothing.usedModeB && smoothing.isActive) {
           writeBlock(mFormat.format(299));
@@ -750,7 +756,7 @@ function onDwell(seconds) {
   if (seconds > maxValue) {
     warning(subst(localize("Dwelling time of '%1' exceeds the maximum value of '%2' in operation '%3'"), seconds, maxValue, getParameter("operation-comment", "")));
   }
-  seconds = clamp(1, seconds, 99999999);
+  seconds = clamp(0.001, seconds, maxValue);
   writeBlock(gFormat.format(4), "P" + secFormat.format(seconds));
 }
 
@@ -786,14 +792,16 @@ function protectedProbeMove(_cycle, x, y, z) {
   var _z = zOutput.format(z);
   var _code = getProperty("probingType") == "Renishaw" ? 8810 : 8703;
   var feedrate = getParameter("operation:tool_feedProbeLink", _cycle.feedrate);
+  // O8810 does not keep F between calls; without F it uses the protected feeds set on the control (#509 XY, 0.6 x #509 Z)
+  var useControlFeeds = _code == 8810;
   if (_z && z >= getCurrentPosition().z) {
-    writeBlock(gFormat.format(65), "P" + _code, _z, getFeed(feedrate)); // protected positioning move
+    writeBlock(gFormat.format(65), "P" + _code, _z, useControlFeeds ? "" : getFeed(feedrate)); // protected positioning move
   }
   if (_x || _y) {
-    writeBlock(gFormat.format(65), "P" + _code, _x, _y, getFeed(feedrate)); // protected positioning move
+    writeBlock(gFormat.format(65), "P" + _code, _x, _y, useControlFeeds ? "" : getFeed(feedrate)); // protected positioning move
   }
   if (_z && z < getCurrentPosition().z) {
-    writeBlock(gFormat.format(65), "P" + _code, _z, getFeed(feedrate)); // protected positioning move
+    writeBlock(gFormat.format(65), "P" + _code, _z, useControlFeeds ? "" : getFeed(feedrate)); // protected positioning move
   }
 }
 
@@ -812,7 +820,27 @@ function onCyclePoint(x, y, z) {
   }
 }
 
+function warnDegressivePecking(cycle) {
+  if (cycle.incrementalDepthReduction > 0) {
+    warning(localize("G73/G83 use a fixed peck depth (Q), so the peck depth reduction from CAM is not applied."));
+  }
+}
+
+function warnShiftOrientation(cycle) {
+  if (cycle.shiftOrientation) {
+    warning(localize("The shift orientation from CAM is ignored. The control shifts in the direction set by user parameter 012004 (G76, G87 shift direction)."));
+  }
+}
+
 function writeDrillCycle(cycle, x, y, z) {
+  if (cycleType.indexOf("tapping") != -1 && spindleSpeed > maximumTappingSpeed) {
+    error(subst(localize("Spindle speed %1 exceeds the maximum tapping speed of %2 (machine parameter 11000058)."), spindleSpeed, maximumTappingSpeed));
+    return;
+  }
+  if (state.tcpIsActive) { // canned cycles are not allowed under G43.4/G43.5
+    error(localize("Canned cycles are not supported under TCP control (G43.4/G43.5). Enable 'Use G68.2' for 3+2 operations."));
+    return;
+  }
   if (!isSameDirection(machineConfiguration.getSpindleAxis(), getForwardDirection(currentSection))) {
     expandCyclePoint(x, y, z);
     return;
@@ -826,7 +854,7 @@ function writeDrillCycle(cycle, x, y, z) {
 
     writeBlock(gFeedModeModal.format(94));
     var F = cycle.feedrate;
-    var P = !cycle.dwell ? 0 : clamp(1, cycle.dwell, 99999999); // in seconds
+    var P = !cycle.dwell ? 0 : clamp(0.001, cycle.dwell, 99999.999); // in seconds
 
     // tapping variables
     var threadPitch = tool.threadPitch;
@@ -860,6 +888,7 @@ function writeDrillCycle(cycle, x, y, z) {
       if ((cycle.accumulatedDepth < cycle.depth) || (P > 0)) {
         expandCyclePoint(x, y, z);
       } else {
+        warnDegressivePecking(cycle);
         writeBlock(
           gRetractModal.format(98), gCycleModal.format(73),
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
@@ -872,6 +901,7 @@ function writeDrillCycle(cycle, x, y, z) {
       if (P > 0) {
         expandCyclePoint(x, y, z);
       } else {
+        warnDegressivePecking(cycle);
         writeBlock(
           gRetractModal.format(98), gCycleModal.format(83),
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
@@ -891,7 +921,7 @@ function writeDrillCycle(cycle, x, y, z) {
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
           unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
           unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-          getProperty("doubleTapWithdrawSpeed") ? "L" + (spindleSpeed * 2 > 6000 ? 6000 : spindleSpeed * 2) : ""
+          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
         );
       } else {
         writeBlock(
@@ -912,7 +942,7 @@ function writeDrillCycle(cycle, x, y, z) {
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
           unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
           unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-          getProperty("doubleTapWithdrawSpeed") ? "L" + (spindleSpeed * 2 > 6000 ? 6000 : spindleSpeed * 2) : ""
+          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
         );
       } else {
         writeBlock(
@@ -933,7 +963,7 @@ function writeDrillCycle(cycle, x, y, z) {
           getCommonCycle(x, y, cycle.bottom, cycle.retract),
           unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
           unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-          getProperty("doubleTapWithdrawSpeed") ? "L" + (spindleSpeed * 2 > 6000 ? 6000 : spindleSpeed * 2) : ""
+          getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
         );
       } else {
         writeBlock(
@@ -960,7 +990,7 @@ function writeDrillCycle(cycle, x, y, z) {
             "Q" + xyzFormat.format(cycle.incrementalDepth),
             unit == IN ? "J" + xyzFormat.format(threadsPerInch) : "",
             unit == MM ? "I" + xyzFormat.format(threadPitch) : "",
-            getProperty("doubleTapWithdrawSpeed") ? "L" + (spindleSpeed * 2 > 6000 ? 6000 : spindleSpeed * 2) : ""
+            getProperty("doubleTapWithdrawSpeed") ? "L" + rpmFormat.format(Math.min(spindleSpeed * 2, maximumTappingSpeed)) : ""
           );
         } else { // G84/G74 does not support chip breaking
           error(localize("Tapping with chip breaking is not supported by the G74/G84 cycle."));
@@ -968,6 +998,7 @@ function writeDrillCycle(cycle, x, y, z) {
       }
       break;
     case "fine-boring":
+      warnShiftOrientation(cycle);
       writeBlock(
         gRetractModal.format(98), gCycleModal.format(76),
         getCommonCycle(x, y, z, cycle.retract),
@@ -977,6 +1008,7 @@ function writeDrillCycle(cycle, x, y, z) {
       );
       break;
     case "back-boring":
+      warnShiftOrientation(cycle);
       var dx = (gPlaneModal.getCurrent() == 19) ? cycle.backBoreDistance : 0;
       var dy = (gPlaneModal.getCurrent() == 18) ? cycle.backBoreDistance : 0;
       var dz = (gPlaneModal.getCurrent() == 17) ? cycle.backBoreDistance : 0;
@@ -1020,13 +1052,8 @@ function writeDrillCycle(cycle, x, y, z) {
       }
       break;
     case "manual-boring":
-      writeBlock(
-        gRetractModal.format(98), gCycleModal.format(88),
-        getCommonCycle(x, y, z, cycle.retract),
-        "P" + secFormat.format(P), // not optional
-        cyclefeedOutput.format(F)
-      );
-      break;
+      error(localize("Manual boring is not supported: the CNC-D00 has no G88 cycle."));
+      return;
     case "boring":
       if (feedFormat.getResultingValue(cycle.feedrate) != feedFormat.getResultingValue(cycle.retractFeedrate)) {
         expandCyclePoint(x, y, z);
@@ -1070,10 +1097,11 @@ function writeDrillCycle(cycle, x, y, z) {
 }
 
 function writeProbeCycle(cycle, x, y, z) {
-  if (!settings.workPlaneMethod.useTiltedWorkplane && !isSameDirection(currentSection.workPlane.forward, new Vector(0, 0, 1))) {
-    if (!settings.probing.allowIndexingWCSProbing && currentSection.strategy == "probe") {
-      error(localize("Updating WCS / work offset using probing is only supported by the CNC in the WCS frame."));
-    }
+  // Renishaw cycles cannot run under coordinate rotation (Inspection Plus manual: cancel with G69),
+  // which a tilted probe operation gets from G68.2, so any probing needs the tool axis along +Z.
+  if (!isSameDirection(currentSection.workPlane.forward, new Vector(0, 0, 1))) {
+    error(localize("Probing is only supported with the tool axis along +Z. The probe cycles cannot run on a tilted work plane (G68.2)."));
+    return;
   }
   var isMirrored = currentSection.getInternalPatternId && currentSection.getInternalPatternId() != currentSection.getPatternId();
   validate(!isMirrored, "Mirror pattern is not supported for Probing toolpaths.");
@@ -1627,7 +1655,7 @@ function getProbingArguments(cycle, updateWCS) {
   if (getProperty("probingType") == "Renishaw") {
     return [
       (cycle.angleAskewAction == "stop-message" ? "B" + xyzFormat.format(cycle.toleranceAngle ? cycle.toleranceAngle : 0) : undefined),
-      ((cycle.updateToolWear && cycle.toolWearErrorCorrection < 100) ? "F" + xyzFormat.format(cycle.toolWearErrorCorrection ? cycle.toolWearErrorCorrection / 100 : 100) : undefined),
+      ((cycle.updateToolWear && cycle.toolWearErrorCorrection < 100) ? "F" + xyzFormat.format(cycle.toolWearErrorCorrection / 100) : undefined),
       (cycle.wrongSizeAction == "stop-message" ? "H" + xyzFormat.format(cycle.toleranceSize ? cycle.toleranceSize : 0) : undefined),
       (cycle.outOfPositionAction == "stop-message" ? "M" + xyzFormat.format(cycle.tolerancePosition ? cycle.tolerancePosition : 0) : undefined),
       ((cycle.updateToolWear && cycleType == "probing-z") ? "T" + xyzFormat.format(cycle.toolLengthOffset) : undefined),
@@ -2099,6 +2127,10 @@ function validateToolData() {
       var diameterOffset = section.getTool().diameterOffset;
       var comment = section.getParameter("operation-comment", "");
 
+      // G100 reads T1-99 and T201-299 as tools; T101-199 are magazine pots and T901-930 tool groups
+      if (!((toolNumber >= 1 && toolNumber <= 99) || (toolNumber >= 201 && toolNumber <= 299)) && !getProperty("toolAsName")) {
+        error(subst(localize("Tool number %1 is not valid for G100. Use 1 to 99 or 201 to 299."), toolNumber));
+      }
       if (toolNumber > _maximumToolNumber && !getProperty("toolAsName")) {
         warnings.toolNumber.values.push(SP + toolNumber + EOL);
       }
@@ -3150,9 +3182,7 @@ function initializeSmoothing(_section) {
   // M298 mode: force smoothing re-output when switching between TCP and non-TCP sections,
   // because the actual codes change (M298 vs M280-M287) even if the level is the same.
   if (_section.getProperty("smoothingMode") == "M298" && !isFirstSection() && smoothing.isActive) {
-    var prevMultiAxis = getPreviousSection().isMultiAxis();
-    var curMultiAxis = _section.isMultiAxis();
-    if (prevMultiAxis != curMultiAxis) {
+    if (sectionUsesTCP(getPreviousSection()) != sectionUsesTCP(_section)) {
       smoothing.isDifferent = true;
       smoothing.force = true;
     }
@@ -3241,6 +3271,7 @@ function writeProgramHeader() {
 // <<<<< INCLUDED FROM include_files/writeProgramHeader.cpi
 
 // >>>>> INCLUDED FROM include_files/onRapid_fanuc.cpi
+var WARNING_SAFE_PROBING_BLUM = 10;
 function onRapid(_x, _y, _z) {
   var x = xOutput.format(_x);
   var y = yOutput.format(_y);
@@ -3251,20 +3282,21 @@ function onRapid(_x, _y, _z) {
       return;
     }
     // Use protected positioning (G31 P2 skip-on-trigger) for all rapid moves when probe is active.
-    // Prevents probe damage from premature contact during approach moves if WCS is wrong.
+    // Prevents probe damage from premature contact on rapids inside a probe operation if WCS is wrong.
+    // No F: O8810 then runs at the protected feeds set on the control (#509 XY, 0.6 x #509 Z).
     if (tool.type == TOOL_PROBE && getProperty("useSafeProbing")) {
       if (getProperty("probingType") != "Renishaw") {
-        warning(localize("Safe probing is only supported for Renishaw probes. Blum approach moves will use standard rapids."));
+        warningOnce(localize("Safe probing is only supported for Renishaw probes. Blum approach moves will use standard rapids."), WARNING_SAFE_PROBING_BLUM);
         writeBlock(gMotionModal.format(0), x, y, z);
       } else {
         if (z && _z >= getCurrentPosition().z) {
-          writeBlock(gFormat.format(65), "P" + 8810, z, getFeed(highFeedrate));
+          writeBlock(gFormat.format(65), "P" + 8810, z);
         }
         if (x || y) {
-          writeBlock(gFormat.format(65), "P" + 8810, x, y, getFeed(highFeedrate));
+          writeBlock(gFormat.format(65), "P" + 8810, x, y);
         }
         if (z && _z < getCurrentPosition().z) {
-          writeBlock(gFormat.format(65), "P" + 8810, z, getFeed(highFeedrate));
+          writeBlock(gFormat.format(65), "P" + 8810, z);
         }
       }
     } else {
@@ -3367,6 +3399,15 @@ function onLinear5D(_x, _y, _z, _a, _b, _c, feed, feedMode) {
 // <<<<< INCLUDED FROM include_files/onLinear5D_fanuc.cpi
 // >>>>> INCLUDED FROM include_files/onCircular_fanuc.cpi
 function onCircular(clockwise, cx, cy, cz, x, y, z, feed) {
+  if (state.tcpIsActive) { // G02/G03 are not allowed under G43.4/G43.5; arcs linearized below are fine
+    var plane = getCircularPlane();
+    var isLinearized = (isFullCircle() && (getProperty("useRadius") || isHelical())) ||
+      (plane != PLANE_XY && plane != PLANE_ZX && plane != PLANE_YZ && !getProperty("allow3DArcs"));
+    if (!isLinearized) {
+      error(localize("Circular moves are not supported under TCP control (G43.4/G43.5). Enable 'Use G68.2' for 3+2 operations."));
+      return;
+    }
+  }
   if (pendingRadiusCompensation >= 0) {
     error(localize("Radius compensation cannot be activated/deactivated for a circular move."));
     return;
@@ -3717,16 +3758,8 @@ function cancelLengthCompensation(force) {
 // <<<<< INCLUDED FROM include_files/cancelLengthCompensation_fanuc.cpi
 // >>>>> INCLUDED FROM include_files/rewind.cpi
 function onMoveToSafeRetractPosition() {
-  if (!getSetting("allowCancelTCPBeforeRetracting", false)) {
-    writeRetract(Z);
-  }
-  if (state.tcpIsActive) { // cancel TCP so that tool doesn't follow rotaries
-    setTCP(false);
-  }
-  writeRetract(Z);
-  if (getSetting("retract.homeXY.onIndexing", false)) {
-    writeRetract(settings.retract.homeXY.onIndexing);
-  }
+  // The TCP retract is G100 T<current>, which stops the spindle, and nothing restarts it before re-entry.
+  error(localize("Rewinds are not supported: the spindle would not be restarted after the retract. Disable retract and reconfigure in the machine configuration."));
 }
 
 /** Rotate axes to new position above reentry position */
@@ -4010,11 +4043,9 @@ function setProbeAngle() {
       validateWorkOffset = true;
       break;
     case "AXIS_ROT":
-      var param = baseParamAxisRot + probeOutputWorkOffset * 20 + probeVariables.rotaryTableAxis + 4;
-      writeBlock("#" + param + " = " + "[#" + param + " + " + pr + "]");
-      forceWorkPlane(); // force workplane to rotate ABC in order to apply rotation offsets
-      currentWorkOffset = undefined; // force WCS output to make use of updated parameters
-      validateWorkOffset = true;
+      // Upstream wrote #[5200 + offset * 20 + rotaryTableAxis + 4], which assumes Fanuc axis numbering (C = #5225 for G54).
+      // On the D00 the rotaries are the 5th (A) and 6th (C) axes, so #5225 is most likely A. Refuse until confirmed on the control.
+      error(localize("Angle compensation through the rotary work offset is disabled: the C offset variable (#5225 or #5226) has not been confirmed on this control."));
       break;
     default:
       error(localize("Angular Probing is not supported for this machine configuration."));

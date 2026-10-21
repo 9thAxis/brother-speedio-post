@@ -43,11 +43,12 @@ cmd_run() {
   [[ -f "$cps" ]] || { echo "error: cps not found: $cps" >&2; exit 1; }
   require_post_bin
 
-  local label out_dir count=0 failures=0
+  local label out_dir count=0 failures=0 expected_failures=0 log
   label=$(derive_label "$cps")
   out_dir="$RUNS_DIR/$kind/$label"
   rm -rf "$out_dir"
   mkdir -p "$out_dir"
+  log=$(mktemp)
 
   echo "Posting $(basename "$cps") against $FIXTURES_DIR"
   echo "  label:   $label"
@@ -57,23 +58,43 @@ cmd_run() {
   while IFS= read -r -d '' cnc; do
     local rel="${cnc#$FIXTURES_DIR/}"
     local out="$out_dir/${rel%.cnc}.nc"
+    local expected_error
+    expected_error=$(expected_failure "$kind" "$rel")
     mkdir -p "$(dirname "$out")"
-    local -a post_args=(--log /dev/null)
+    local -a post_args=(--log "$log")
     [[ -n "${MACHINE_FILE:-}" ]] && post_args+=(--machine "$MACHINE_FILE")
     # Only emit N numbers on tool changes so inserting/removing a line doesn't
     # shift every subsequent N and create noise in regression diffs.
     post_args+=(--property showSequenceNumbers '"toolChange"')
     post_args+=("$cps" "$cnc" "$out")
     if "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
-      count=$((count+1))
+      if [[ -n "$expected_error" ]]; then
+        failures=$((failures+1))
+        echo "  FAIL: $rel posted, expected error: $expected_error"
+      else
+        count=$((count+1))
+      fi
+    elif [[ -n "$expected_error" ]] && grep -qF "$expected_error" "$log"; then
+      expected_failures=$((expected_failures+1))
+      rm -f "$out"
+      echo "  expected error: $rel"
     else
       failures=$((failures+1))
       echo "  FAIL: $rel"
     fi
   done < <(find "$FIXTURES_DIR" -name "*.cnc" -print0)
+  rm -f "$log"
 
-  echo "Done: $count posted, $failures failed."
+  echo "Done: $count posted, $expected_failures stopped with their expected error, $failures failed."
   [[ $failures -eq 0 ]]
+}
+
+# Fixtures the modified post must refuse, with the error text it must stop with.
+# Format of tests/expected-failures.txt: <fixture path relative to FIXTURES_DIR>|<error text>
+expected_failure() {
+  local kind="$1" rel="$2" file="$SCRIPT_DIR/expected-failures.txt"
+  [[ "$kind" == "modified" && -f "$file" ]] || return 0
+  awk -F'|' -v rel="$rel" '$1 == rel { print $2; exit }' "$file"
 }
 
 # Every fixture posts with useSmoothing at Automatic, so the explicit levels
