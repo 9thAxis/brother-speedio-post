@@ -175,6 +175,142 @@ C variable, test on a part with a known small skew (e.g. 1–2°):
 
 ---
 
+## D. Tilted-plane probing (future feature — `TILTED_PROBING.md`)
+
+Not part of validating the current post. D1 proves the frame copy before any post code is
+written; D2 and D3 come after the post change.
+
+### D1. Frame copy round trip, in the air (hand-written program)
+G68.2 only runs in memory operation, not MDI, and MDI intervention is refused while it is active
+(PM 3-56). So load this as a program in memory (not extended memory, tape or FTP: PM 6-25
+NOTE 2), and do not use MDI at the stops. The air-run rules apply: no part, external Z
++100. The program refuses to start without that offset. The G68.2 and A/C lines are the post's
+own output for an A+30° face (regression fixture `a-30`). The copy goes into **P300**, which
+is zero and unused. Don't use P48: the Blum tool-setter macros use P48 as an all-zero offset.
+
+```
+(D1 TILTED FRAME COPY - AIR TEST)
+(NO PART. EXT Z +100. SINGLE BLOCK. RAPID OVERRIDE LOWEST.)
+IF[ABS[#5203-100.]GT0.001]GOTO98
+#24=0. (TEST POINT X, FEATURE FRAME)
+#25=0. (TEST POINT Y, FEATURE FRAME)
+#26=50. (TEST HEIGHT ABOVE THE FACE)
+G00 G90 G40 G80
+G28 G91 Z0
+G90
+G94 G49
+M299
+G69
+G54
+G53 G00 X0 Y0
+G00 A0. C0.
+G00 A30. C0.
+G68.2 X0 Y0 Z0 I0. J30. K0.
+G53.1
+G17 G90 G94
+G100 T28 X#24 Y#25 G43 Z#26 H28
+M159
+#30=#5021
+#31=#5022
+#32=#5023
+#33=#5083
+IF[ABS[#33-#11028-#10028]GT0.0005]GOTO90
+(STOP 1 - WRITE DOWN MACHINE X Y Z FROM THE SCREEN)
+M00
+G28 G91 Z0
+G90
+G49
+G69
+G10 L20 P300 X[#30-#5201-#24] Y[#31-#5202-#25] Z[#32-#5203-#33-#26]
+G54.1 P300
+G00 X#24 Y#25
+M159
+IF[ABS[#5021-#30]GT0.002]GOTO90
+IF[ABS[#5022-#31]GT0.002]GOTO90
+IF[ABS[#5043-#5023+#32-#33-#26]GT0.002]GOTO90
+G43 Z[#26+25.] H28
+M159
+IF[ABS[#5023-#32-25.]GT0.002]GOTO90
+G00 Z#26
+M159
+IF[ABS[#5023-#32]GT0.002]GOTO90
+(STOP 2 - MACHINE X Y Z MUST MATCH STOP 1)
+M00
+G28 G91 Z0
+G90
+G49
+G54
+G10 L20 P300 X0 Y0 Z0
+G53 G00 X0 Y0
+G00 A0. C0.
+GOTO99
+N90
+G28 G91 Z0
+G90
+G49
+G69
+G54
+G10 L20 P300 X0 Y0 Z0
+M159
+#3000=1(TILT*COPY*MISMATCH)
+N98
+#3000=2(SET*EXT*Z*100)
+N99
+M30
+```
+
+Before running: check that P300 is zero, and that T28/H28 hold the probe. Single block,
+rapid override at its lowest setting, hand on Feed hold.
+- The table moves only at `G00 A…` blocks, with Z at home. Between `G68.2` and the final
+  `G00 A0. C0.` the table must not move.
+- After `G54.1 P300`, `G00 X#24 Y#25` runs with Z at home. It should be a zero-length move,
+  because the probe is already at that XY. The XY check runs right after it, then a Z check with no motion:
+  the control's own workpiece Z under P300 and the external offset must match the copy.
+- `G43 Z[#26+25.] H28` must be a Z-only move down, stopping 25 mm above the stop 1 point. Then
+  `G00 Z#26` covers the last 25 mm.
+- **Pass:** no alarm, and stop 2 shows the same machine X/Y/Z as stop 1 (within 0.002).
+- **Fail:** alarm 9001 means a check failed. The program has already retracted Z, cancelled
+  everything and zeroed P300 (the `M159` before the alarm makes the cleanup finish first). The table is still at A30: after Reset, return it in MDI with
+  `G53 G00 X0 Y0` then `G00 A0. C0.`. Before Reset, read #30–#33, #5201–#5203, #11028 and #10028 on the
+  macro variable screen and record them. Alarm 9002 means the external Z offset isn't +100. A Z
+  mismatch that is the same on every run points to an offset the formula doesn't know about,
+  such as a warm-up shift.
+- **Any other alarm** (not 9001/9002) can leave G68.2, G43 or G54.1 P300 active. Recover as in
+  D1d, zero P300 (offset screen, or `G10 L20 P300 X0 Y0 Z0` from memory) and select G54 before
+  running any other program.
+
+**D1b, non-zero terms.** D1 with zeros everywhere can't catch a sign error in the X/Y terms, or
+#5083 leaving out wear. Run it again with all of these:
+- `#24=40.` and `#25=-30.`;
+- external X and Y offsets of +5.000 each (Z stays +100);
+- T28 length wear temporarily set to +0.500. Positive wear lifts the probe, so any failure
+  errs upward.
+Then put the wear and the external X/Y back. Same pass criteria.
+
+**D1c, a C face.** D1 with `G00 A30. C-90.` and `G68.2 X0 Y0 Z0 I-90. J30. K90.` (fixture `all`),
+keeping `#24=0.` and `#25=0.`. Non-zero test points are only valid on an aligned face, and this
+one is not aligned: a ±90° rotation about Z is left after indexing (see `TILTED_PROBING.md`). Same pass criteria.
+
+**D1d, Reset behaviour.** At stop 1 of one run (probe in the air at A30), press Reset instead of
+Cycle start. Record whether the modal screen still shows G68.2, G43/H28 and which work offset is
+active. Then recover:
+1. Jog Z up in handle mode.
+2. If MDI is accepted, run `G28 G91 Z0`, `G90`, `G49`, `G69`, `G54`, `G53 G00 X0 Y0`,
+   `G00 A0. C0.`.
+3. If MDI is refused (G68.2 still active), run those blocks as a small program from memory.
+4. Check that P300 is still zero.
+
+Afterwards: set the external offset back to its previous value (X, Y and Z), and check that
+P300 is zero and T28's wear is back.
+
+### D2. Tilted inspection in the air (post output) — after the post change
+### D3. Bore and single surface on a tilted face of a test part — after D2
+Machine a bore and a wall on a 30° face in 3+2, then inspect them with tool wear update at 0 %.
+**Pass:** the reported diameter matches a bore gauge, the centre and wall positions are within a
+few hundredths of nominal, and no tool offset changes.
+
+---
+
 ## Results
 
 | Test | Result (pass / fail / value) | Date | Notes |
@@ -196,3 +332,8 @@ C variable, test on a part with a known small skew (e.g. 1–2°):
 | C4 0 % wear | | | |
 | C5 corner | | | |
 | C6 angle compensation | | | |
+| D1 tilted frame copy | | | |
+| D1b non-zero terms / D1c C face | | | |
+| D1d Reset: G68.2 / G43 / offset after Reset | | | |
+| D2 tilted inspection, air | | | |
+| D3 tilted inspection, part | | | |
