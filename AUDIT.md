@@ -78,6 +78,11 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
   `#5224` = 4th, `#5225` = A, `#5226` = C.
 - **Effect if so:** the measured XY skew is added to A's work offset; the next index tilts the
   table by that angle — wrong part, possible collision.
+- **Machine result (MACHINE_VALIDATION A1, 2026-10-25):** with G59 A = 11.111 and C = 22.222,
+  `#5324` = 11.111, `#5325` = 0, `#5326` = 22.222. The slots are X, Y, Z, A, **B**, C, so
+  `#5225` is the B-axis offset (no B axis on this machine), not A. Upstream's write is lost
+  rather than tilting the table, but angle compensation still never reaches C. The correct C
+  slot is `#5226` (`#5206 + 20·wo`).
 - **Also:** even with the right slot, G54 X/Y are not re-solved about the C centreline
   (correct only if the WCS origin is on it); sign unverified (.mch C turns about −Z; O8843
   line 185 `#144 = #16 − #1`).

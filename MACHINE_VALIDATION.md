@@ -17,17 +17,25 @@ until everything before it has passed.
   Fusion — see A0) and the current machine file (`brother u500Xd2.mch`).
 - **Simulate first.** Run every program through Fusion machine simulation with the machine
   model before it goes to the control, and keep the simulation open next to the machine.
-- **First run of every program:** single block on, rapid override at the lowest setting, feed
-  override low, hand on Feed hold. Raise the overrides only on a second run that has already
-  gone through clean.
-- **Air runs (part B):** no part or fixture on the table, or clamp only things well below the
-  path. Shift everything up with the external work offset: Z of `#5203` (Workpiece coord zero
-  screen, "EXT") = **+100.000**, and set it back to its previous value after part B. Avoid the
-  A −30° stroke end in 3+2 test programs (use A +30° to +90°). Under TCP (5-axis ops) this control
-  works in the table coordinate system (user parameter 150001 = 0): work offsets, the external
-  one included, are fixed to the table and tilt with it, so the +100 is along the table's normal,
-  not machine Z. At large A the path shifts sideways and will not line up with the simulation;
-  keep 5-axis (TCP) air runs within |A| ≤ 30°.
+- **First run of every program:** single block on ([SINGL] lit), rapid override on position 2
+  (user parameter 020502 = 500 mm/min; position 1 is 0 mm/min and stops rapids), feed override
+  low, hand on [FEED HOLD]. Raise the overrides only on a second run that has already gone
+  through clean. **Single block cannot be used for cutting moves in high-accuracy mode**
+  (`M298 L…`, `M28x`): the control raises SM7571 "Command interrupted in high-accuracy mode B"
+  (cause B; a feed hold mid-cut can raise it too, cause A). Step the approach rapids in single
+  block, then turn it off before the first feed move and run in cycle at rapid position 2.
+- **Air runs (part B):** no part in the vise. Raise **G54 Z by 100 mm** (Data bank > Workpiece
+  coordinate zero, cursor on G54 Z, type 100, press `<Add>`) and take it off again after part B.
+  **Do not use the external work offset ("EXT") for this:** on this control user parameter
+  010520 = 0 (Method 1) applies EXT only while the external I/O signal EXWORK is ON, and EXWORK
+  (signal 509) is not assigned in the external I/O data (2026-10-12 backup), so an EXT value is
+  stored but never applied. Avoid the A −30° stroke end in 3+2 test programs (use A +30° to +90°).
+  Under TCP (5-axis ops) this control works in the table coordinate system (user parameter
+  150001 = 0): work offsets are fixed to the table and tilt with it, so the +100 is along the
+  table's normal, not machine Z. At large A the path shifts sideways and will not line up with
+  the simulation; keep 5-axis (TCP) air runs within |A| ≤ 30°.
+- The step-by-step at the control (screens, keys, MDI blocks) for the PostEval programs is in
+  `MACHINE_RUNBOOK.md`.
 
 Record each result in the table at the end.
 
@@ -51,12 +59,18 @@ If either check fails, Fusion is still using the old post: stop and fix that fir
 Angle compensation is disabled in the post until this is known.
 1. Pick an offset you do not use, e.g. **G59**. Write down its current values.
 2. On the Workpiece coord zero screen, enter **A = 11.111** and **C = 22.222** for G59.
-3. On the macro variable screen, read **#5324, #5325, #5326** (G59 = #5321–#5326).
+3. System variables (#5000s) are not shown on any screen: copy them in MDI with
+   `#195=#5324`, `#196=#5325`, `#197=#5326` ([START]), then read **#195–#197** on the macro
+   variable screen (`<#100 - 199>`). #191–#199 are not used by any macro in the backup.
 4. Record which variable shows 11.111 (A) and which shows 22.222 (C).
 5. Put G59 back to the values from step 1.
 
 **Expected (from the manual):** #5325 = 11.111 (A), #5326 = 22.222 (C). If so, upstream's
 `#5225` (G54) was writing the skew into **A**, and the post fix will use `#5226`.
+
+**Result (2026-10-25):** #5324 = 11.111, #5325 = 0.000, #5326 = 22.222. The six slots are X, Y,
+Z, **A, B, C**: A is `#52x4`, the unused B axis is `#52x5`, C is `#52x6`. Upstream's `#5225`
+writes the skew into B (not A, as expected above). The fix still uses `#5226` for C.
 
 ### A2. Renishaw protected-move feed
 The post now leaves F off `G65 P8810`, so O8810 uses the feeds O8724 derives from `#509`.
@@ -90,7 +104,7 @@ with "The NC program is in inches but the control unit is set to millimeters…"
 
 ---
 
-## B. Air runs (no part, external Z +100)
+## B. Air runs (no part, G54 Z raised by 100)
 
 ### B1. A and C directions — closed, no test needed (AUDIT §7.2)
 TCP parts have already been cut on this machine with the Fusion post, and the machine file's
@@ -122,7 +136,7 @@ One tap at S ≤ 6000 with "Double the tap withdraw speed" on, and one counter-b
 Any two-op program (non-probe tools). **Pass:** at the end of the first op the chip shower runs for
 the retention time set in 014501.
 
-Set the external Z offset back after part B.
+Take the 100 mm back off G54 Z after part B (type -100, `<Add>`).
 
 ---
 
@@ -181,6 +195,11 @@ Not part of validating the current post. D1 proves the frame copy before any pos
 written; D2 and D3 come after the post change.
 
 ### D1. Frame copy round trip, in the air (hand-written program)
+> **Do not run D1 as written.** Its air-run safety relies on the external offset (EXT Z +100) and
+> its start guard only checks the stored `#5203` value. On this control EXT is never applied
+> (010520 = 0 and EXWORK unassigned, see the air-run rule), so the guard would pass while the
+> program runs at real G54 height. D1 must be reworked to raise the frame another way before use.
+
 G68.2 only runs in memory operation, not MDI, and MDI intervention is refused while it is active
 (PM 3-56). So load this as a program in memory (not extended memory, tape or FTP: PM 6-25
 NOTE 2), and do not use MDI at the stops. The air-run rules apply: no part, external Z
@@ -316,21 +335,22 @@ few hundredths of nominal, and no tool offset changes.
 | Test | Result (pass / fail / value) | Date | Notes |
 |---|---|---|---|
 | A0 Fusion uses updated post | | | |
-| A1 A variable / C variable | | | |
+| A1 A variable / C variable | A = #52x4, B = #52x5 (unused), C = #52x6 (G59: #5324 = 11.111, #5325 = 0, #5326 = 22.222) | 2026-10-25 | Upstream #5225 → B, not A; fix uses #5226 |
 | A2 #509 / #505 | | | |
 | A3 parameters | | | |
 | A4 probe T28 / H28 | | | |
 | A5 unit guard | | | |
 | B1 A/C directions | closed — TCP used before, .mch axes unchanged | 2026-10-21 | |
-| B2 transitions | | | |
-| B3 explicit level | | | |
-| B4 tap L / dwell | | | |
-| B5 washdown | | | |
-| C1 approach | | | |
-| C2 protected feeds | | | |
-| C3 PATH OBSTRUCTED | | | |
-| C4 0 % wear | | | |
-| C5 corner | | | |
+| B2 transitions | pass — Z retracts before A/C rotate; M283 and M284 shown in <Modal 2>; no TCP alarm; finishing S after the 5-axis ops | 2026-10-25 | Air run, G54 Z +100. SM7571 when single-blocking cutting moves in M298 (runbook updated) |
+| B3 explicit level | pass — explicit level 5 gives M298 L6, finishing S | 2026-10-25 | |
+| B4 tap L / dwell | pass — T15 at S500 with no alarm; G77 L1000 retract and G82 P0.25 dwell ran | 2026-10-25 | |
+| B5 washdown | pass — shower ran at M400/M401 for the 014501 time | 2026-10-25 | |
+| C1 approach | pass — R2 N65 stopped the probe above the bore, P8832 at N70 | 2026-10-25 | |
+| C2 protected feeds | pass — P8810 moves at about 5000 mm/min XY, 3000 Z (#509 defaults) | 2026-10-25 | |
+| C3 PATH OBSTRUCTED | pass — P8810 Z-3 F200 onto the faced top stopped with the PATH OBSTRUCTED alarm | 2026-10-25 | |
+| C4 0 % wear | pass — T2 wear offset still 0.000 after `P8814 … F0 T2 V0`. MDI re-measure: #138 = 15.939, #143 = −0.061, #145 = 0.0188 | 2026-10-25 | Ø16 bore cut undersize (gauge 15.906, probe 15.939); process, not post: path is the Ø9.65 tool-centre circle. First read was after the corner cycle, which clears #135–#149 |
+| C4b G41 wear direction | pass — T2 Cutter wear offset −0.030 (radius) and recut: #138 = 16.0245, #143 = +0.0245, #145 = 0.0111. A negative wear opens a G41 bore, as expected | 2026-10-26 | Grew 0.0855 vs 0.060 predicted: the 0.03 recut deflects less than the 0.25 finish pass |
+| C5 corner | pass — G56 = G54 + (−0.0099, −0.0175); #145 = 0.0201 matches | 2026-10-25 | G54 −249.8450 −269.9703 151.2456; G56 −249.8549 −269.9878 0 (G56 Z not set by the corner cycle) |
 | C6 angle compensation | | | |
 | D1 tilted frame copy | | | |
 | D1b non-zero terms / D1c C face | | | |

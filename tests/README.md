@@ -57,7 +57,7 @@ After `./update.sh` has saved the new `upstream/<new-label>.cps` and bootstrappe
 ./tests/regression.sh diff-pair <new-label>                    # what our customizations do
 ```
 
-The fixtures are in inches, while the modified post stops when the output unit differs from its `controlUnit` property (default Millimeters; the D00 has no G20/G21). The harness therefore posts with `--property controlUnit '"IN"'`; posts that don't define the property ignore it.
+The modified post stops when the output unit differs from its `controlUnit` property (default Millimeters; the D00 has no G20/G21). The fixtures were saved in inches, and engines before October 2026 posted them in inches; engine 5.425.0 (Fusion update of 2026-10-24) posts the same fixtures in millimeters, and `--property unit` does not change that. The harness therefore detects the unit once per command (it posts `Milling/2D/face` and reads the output) and passes it as `controlUnit`; set `CONTROL_UNIT=MM` or `IN` in `tests/post.env` to skip detection. Posts that don't define the property ignore it. Runs posted in different units can't be diffed against each other: re-run both sides on the same engine.
 
 Some fixtures exercise output the modified post deliberately refuses (for example `tcp with tsc` uses T0, which G100 does not accept). They are listed in `tests/expected-failures.txt` as `<fixture path>|<error text>`. On a `modified` run, a listed fixture passes only if posting stops with that error text; if it posts, or stops with a different error, it counts as a failure. Upstream runs ignore the list.
 

@@ -24,6 +24,26 @@ require_post_bin() {
   fi
 }
 
+# The unit the post engine writes the fixtures in. The fixtures were saved in inches, and engines
+# before Oct 2026 posted them in inches; engine 5.425.0 (Fusion update of 2026-10-24) posts them in mm.
+# The modified post stops when the output unit differs from its 'controlUnit' property, so the
+# harness passes the unit the engine actually uses. Set CONTROL_UNIT in post.env to skip detection.
+detect_control_unit() {
+  [[ -n "${CONTROL_UNIT:-}" ]] && return
+  local cps="$1" tmp
+  tmp=$(mktemp -d)
+  local -a probe_args=(--log "$tmp/log")
+  [[ -n "${MACHINE_FILE:-}" ]] && probe_args+=(--machine "$MACHINE_FILE")
+  probe_args+=(--property controlUnit '"IN"' "$cps" "$FIXTURES_DIR/$LEVELS_PLAIN_FIXTURE.cnc" "$tmp/out.nc")
+  "$POST_BIN" "${probe_args[@]}" >/dev/null 2>&1 || true
+  if grep -q 'FILE OUTPUT IN MM\|NC program is in millimeters' "$tmp/out.nc" "$tmp/log" 2>/dev/null; then
+    CONTROL_UNIT=MM
+  else
+    CONTROL_UNIT=IN
+  fi
+  rm -rf "$tmp"
+}
+
 derive_label() {
   local cps="$1" rev date
   rev=$(grep -m1 '\$Revision:' "$cps" | awk '{print $2}')
@@ -54,6 +74,8 @@ cmd_run() {
   echo "  label:   $label"
   echo "  output:  $out_dir"
   [[ -n "${MACHINE_FILE:-}" ]] && echo "  machine: $(basename "$MACHINE_FILE")"
+  detect_control_unit "$cps"
+  echo "  unit:    $CONTROL_UNIT"
 
   while IFS= read -r -d '' cnc; do
     local rel="${cnc#$FIXTURES_DIR/}"
@@ -66,9 +88,8 @@ cmd_run() {
     # Only emit N numbers on tool changes so inserting/removing a line doesn't
     # shift every subsequent N and create noise in regression diffs.
     post_args+=(--property showSequenceNumbers '"toolChange"')
-    # The fixtures are in inches; the modified post stops when the output unit differs from
-    # its 'Control unit' property (posts that don't define the property ignore it).
-    post_args+=(--property controlUnit '"IN"')
+    # See detect_control_unit (posts that don't define the property ignore it).
+    post_args+=(--property controlUnit "\"$CONTROL_UNIT\"")
     post_args+=("$cps" "$cnc" "$out")
     : > "$log"
     if "$POST_BIN" "${post_args[@]}" >/dev/null 2>&1; then
@@ -142,6 +163,8 @@ cmd_levels() {
 
   echo "Posting $(basename "$cps") at each explicit high accuracy level"
   echo "  output:  $out_dir"
+  detect_control_unit "$cps"
+  echo "  unit:    $CONTROL_UNIT"
 
   for i in "${!LEVELS_IDS[@]}"; do
     id="${LEVELS_IDS[$i]}"
@@ -151,7 +174,7 @@ cmd_levels() {
       out="$out_dir/$id-$case-$(basename "$fixture").nc"
       local -a post_args=(--log "${out%.nc}.log")
       [[ -n "${MACHINE_FILE:-}" ]] && post_args+=(--machine "$MACHINE_FILE")
-      post_args+=(--property useSmoothing "\"$id\"" --property controlUnit '"IN"')
+      post_args+=(--property useSmoothing "\"$id\"" --property controlUnit "\"$CONTROL_UNIT\"")
       [[ "$case" == "mode-b" ]] && post_args+=(--property smoothingMode '"B"')
       post_args+=("$cps" "$FIXTURES_DIR/$fixture.cnc" "$out")
       checks=$((checks+1))
