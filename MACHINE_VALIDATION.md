@@ -56,7 +56,7 @@ If either check fails, Fusion is still using the old post: stop and fix that fir
 ## A. At the control, no motion
 
 ### A1. Which variable is the C work offset — gates angle compensation (AUDIT §1.1)
-Angle compensation is disabled in the post until this is known.
+Angle compensation was disabled in the post until this was known (now enabled, see C6).
 1. Pick an offset you do not use, e.g. **G59**. Write down its current values.
 2. On the Workpiece coord zero screen, enter **A = 11.111** and **C = 22.222** for G59.
 3. System variables (#5000s) are not shown on any screen: copy them in MDI with
@@ -180,12 +180,35 @@ Inner or outer corner op, followed by another probe point or op with the same to
 - **Pass:** after the corner cycle the probe moves to the XY the simulation shows (the old post
   could drop the X or Y of that move).
 
-### C6. Angle compensation — after A1 and a post update
-Not runnable yet: the post refuses it. Once A1 is recorded and the post writes the confirmed
-C variable, test on a part with a known small skew (e.g. 1–2°):
-- **Pass:** only the C work offset changes, by the skew with the sign that brings the part square,
-  and a re-probe reads near zero skew. Note that XY of the WCS is not re-solved about the C
-  centreline: re-probe XY after the angle update.
+### C6. Angle compensation (post change of 2026-10-26, CUSTOMIZATIONS #17)
+Probing only, no cutting. Until C6 passes, don't use angle compensation for production
+parts: a wrong sign would put every later operation 2× the skew off.
+
+Uses the R1 part (faced top, 1 × 10 shoulder, Ø16 bore at X28 Y18) still clamped as in
+C1–C5, and **G55**, so G54 stays as the reference. The C6 setup's origin is the **top centre of
+the bore** (on the faced top, 1 mm below G54 Z0): a centre found with four touches is the same
+whether the part is square or crooked, and it sits about 33 mm from the C centreline, so the
+X/Y re-solve is large enough to see. (Probing X/Y on a feature away from the origin while the
+part is crooked would put the origin in the wrong place by about distance × angle. In real use,
+probe the angle first, or probe X/Y on a feature at the origin.) The skew is simulated with the
+C offset: with G55 C = −2, C0 in G55 puts the table at −2° and the part turns 2°
+counterclockwise, as if clamped crooked.
+
+1. **No motion:** G55 X = G54 X + 28.000, G55 Y = G54 Y + 18.000, G55 Z = G54 Z − 1.000,
+   A = 0, **C = −2.000**. External X/Y/A must be 0 (otherwise alarm 9172).
+2. **PEVAL-C6** (Fusion setup "REAL CUT C6", all in G55), single block throughout:
+   - N95 `P8814 D16 Q10 S2.` sets G55 X/Y on the bore of the turned part. With the owner's
+     G54 (−249.845, −269.970) it should read about X −222.492, Y −251.000 (moved about
+     −0.65, +0.97 from step 1).
+   - N165 `P8843 X-74.75 D40 Q10 A90` measures the −X shoulder wall; N185–N245 write it.
+3. **Pass:**
+   - G55 C within ±0.02° of 0.
+   - G55 X/Y back within 0.03 mm of the step 1 values.
+   - Wrong C sign: C ends near −4. Missing or wrong-sign X/Y re-solve: X/Y off by about 1.2 or
+     2.3 mm.
+   - Optional MDI check in G55 at C0: `P8814 D16. Q10.` at X0 Y0, Z−6 gives #145 < 0.03;
+     `P8843 X-74.75 D40. Q10. A90.` from X−84.75 Y−18, Z−7 gives #144 within ±0.02°.
+4. Clear G55 afterwards.
 
 ---
 
@@ -351,7 +374,8 @@ few hundredths of nominal, and no tool offset changes.
 | C4 0 % wear | pass — T2 wear offset still 0.000 after `P8814 … F0 T2 V0`. MDI re-measure: #138 = 15.939, #143 = −0.061, #145 = 0.0188 | 2026-10-25 | Ø16 bore cut undersize (gauge 15.906, probe 15.939); process, not post: path is the Ø9.65 tool-centre circle. First read was after the corner cycle, which clears #135–#149 |
 | C4b G41 wear direction | pass — T2 Cutter wear offset −0.030 (radius) and recut: #138 = 16.0245, #143 = +0.0245, #145 = 0.0111. A negative wear opens a G41 bore, as expected | 2026-10-26 | Grew 0.0855 vs 0.060 predicted: the 0.03 recut deflects less than the 0.25 finish pass |
 | C5 corner | pass — G56 = G54 + (−0.0099, −0.0175); #145 = 0.0201 matches | 2026-10-25 | G54 −249.8450 −269.9703 151.2456; G56 −249.8549 −269.9878 0 (G56 Z not set by the corner cycle) |
-| C6 angle compensation | | | |
+| A6 C centre variables | #39032 = −249.975, #39033 = −270.022, #39012 = −0.0015, #39013 = −0.002 (copied to #195–#198) | 2026-10-26 | Match the backup (MPRD1 M12000000, UPRDM1 U130000) |
+| C6 angle compensation | pass — G55 C −2.000 → 0.000; G55 X/Y −221.8450/−251.9703 → −221.8383/−251.9809 (Δ +0.007, −0.011; matches the bore's 0.011 position error) | 2026-10-26 | PEVAL-C6, origin on the bore centre, 33 mm from the C centreline: sign of C and the X/Y re-solve proven |
 | D1 tilted frame copy | | | |
 | D1b non-zero terms / D1c C face | | | |
 | D1d Reset: G68.2 / G43 / offset after Reset | | | |

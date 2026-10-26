@@ -4083,8 +4083,33 @@ function setProbeAngle() {
       break;
     case "AXIS_ROT":
       // Upstream wrote #[5200 + offset * 20 + rotaryTableAxis + 4], which assumes Fanuc axis numbering (C = #5225 for G54).
-      // On the D00 the rotaries are the 5th (A) and 6th (C) axes, so #5225 is most likely A. Refuse until confirmed on the control.
-      error(localize("Angle compensation through the rotary work offset is disabled: the C offset variable (#5225 or #5226) has not been confirmed for the CNC-D00 axis numbering."));
+      // The D00 work offset slots are X, Y, Z, A, B, C (checked on the control): C is #5226 for G54, #5225 is the absent B.
+      // Turning C also turns the work zero about the C centreline, so X/Y are re-solved about it. The centre is read at run
+      // time: machine parameter (#39032/#39033) plus user offset (#39012/#39013), rotation axis 1 = C.
+      // C turns about -Z (machine configuration), so +#144 (counterclockwise skew) needs C + #144, which turns the table by -#144.
+      var base = baseParamAxisRot + probeOutputWorkOffset * 20;
+      var wx = "#" + (base + 1);
+      var wy = "#" + (base + 2);
+      var wa = "#" + (base + 4);
+      var wc = "#" + (base + 6);
+      writeComment("ANGLE COMP - G" + (53 + probeOutputWorkOffset) + " C PLUS ANGLE, XY TURNED ABOUT C CENTRE");
+      // refuse a missing result, and offsets that would move the C centreline (A) or that the re-solve ignores (external X/Y)
+      writeBlock("WHILE[" + pr + "EQ#0]DO1");
+      writeBlock("#3000=171(NO*ANGLE*RESULT)");
+      writeBlock("END1");
+      writeBlock("WHILE[[ABS[#5201]+ABS[#5202]+ABS[#5204]+ABS[" + wa + "]]NE0]DO1");
+      writeBlock("#3000=172(EXT*XY*OR*A*NOT*ZERO)");
+      writeBlock("END1");
+      writeBlock("#30=#39032+#39012");
+      writeBlock("#31=#39033+#39013");
+      writeBlock("#32=" + wx + "-#30");
+      writeBlock("#33=" + wy + "-#31");
+      writeBlock(wx + "=#30+#32*COS[" + pr + "]+#33*SIN[" + pr + "]");
+      writeBlock(wy + "=#31-#32*SIN[" + pr + "]+#33*COS[" + pr + "]");
+      writeBlock(wc + "=" + wc + "+" + pr);
+      forceWorkPlane(); // force workplane to rotate ABC in order to apply rotation offsets
+      currentWorkOffset = undefined; // force WCS output to make use of updated parameters
+      validateWorkOffset = true;
       break;
     default:
       error(localize("Angular Probing is not supported for this machine configuration."));

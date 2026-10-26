@@ -176,7 +176,6 @@ These are validation errors and warnings only; none changes generated motion. Ea
 | Check | Where | Reason |
 |---|---|---|
 | Error for any probe operation whose work plane is not the WCS orientation (tilted, or rotated about Z) | `writeProbeCycle()` | Renishaw cycles cannot run under coordinate rotation (Inspection Plus manual, "cancel code G69"). With 'Use G68.2' on, either case gets G68.2 from `setWorkPlane`; with it off, the table is indexed (e.g. C turned) instead, and probing in that frame is refused too. Upstream only refused WCS probing with a tilted tool axis, and only with `useTiltedWorkplane` off. Side effect: the rotated instances of a rotary-patterned probe operation are refused. |
-| Error instead of rotary-offset angle compensation (`AXIS_ROT`) | `setProbeAngle()` | The slot assumes Fanuc numbering (`#5225` = C for G54). On the D00 the rotaries are the 5th (A) and 6th (C) axes, so `#5225` is most likely A. Disabled until confirmed on the control. |
 | 0 % tool wear feedback writes `F0` | `getProbingArguments()` | Upstream wrote `F100` for 0 % (a 100× correction); the macro expects 0 to 1. |
 | Error when a tap's spindle speed exceeds the new `maximumTappingSpeed` property (default 6000) | `writeDrillCycle()` | Machine parameter 11000058 (Max. tapping speed): G77/G78/G84 alarm above it. Factory values are 6000 for 10K/12K/16K spindles and 8000 for 27K spindles, hence a property rather than a constant. |
 | Tap `L` word formatted through `rpmFormat` and capped at the `maximumTappingSpeed` property instead of a fixed 6000 | `writeDrillCycle()` | A fractional rpm printed as `L3819.7186342`; a 27K spindle was capped below its limit. |
@@ -207,5 +206,33 @@ These are validation errors and warnings only; none changes generated motion. Ea
 - **Why:** Roughing ran a user-defined level whose content depends on each machine (factory: all overrides 100 %, i.e. no level), and semi-roughing ran the slowest level (corner deceleration 2/2/10 %, acceleration 10 % on the U500Xd2), slower than finishing. Smoothing levels change path-following tolerance and cycle time, not commanded positions — though M284 lets the tool path deviate more from the programmed path than M285 did. Mode B is written for TCP operations by default and for 3+2 with `useTiltedWorkplane` off.
 - **Without TCP** (`smoothingMode` B on non-TCP operations) the table above does not hold: per 14.2.6.4 NOTE 1, M280–M287 then select the Chapter 13 Mode B levels (user parameters 102n01–102n07). On the U500Xd2 only M280 has a factory setting there; M281–M287 are identical defaults (the owner's control matches). Set those levels on the control before relying on `smoothingMode` B.
 - **Check:** the regression fixtures change only M282 → M283 (finishing) and M285 → M284 (roughing), with no other line affected, in M298 mode, Mode B and TWP-off runs; each automatic category was forced in an instrumented post (M298: TCP gets M284/M280/M281/M283; Mode B: same everywhere); `tests/regression.sh levels` checks the explicit table.
+
+## 17. Angle compensation writes the C work offset and re-solves X/Y
+
+- **Where:** `setProbeAngle()` `case "AXIS_ROT"` (`grep 'ANGLE COMP'`).
+- **What:** After an angle probe (X/Y plane angle, or a corner with I/J) in a WCS probing operation, the post writes:
+
+  ```
+  WHILE[#144EQ#0]DO1
+  #3000=171(NO*ANGLE*RESULT)
+  END1
+  WHILE[[ABS[#5201]+ABS[#5202]+ABS[#5204]+ABS[#5224]]NE0]DO1
+  #3000=172(EXT*XY*OR*A*NOT*ZERO)
+  END1
+  #30=#39032+#39012
+  #31=#39033+#39013
+  #32=#5221-#30
+  #33=#5222-#31
+  #5221=#30+#32*COS[#144]+#33*SIN[#144]
+  #5222=#31-#32*SIN[#144]+#33*COS[#144]
+  #5226=#5226+#144
+  ```
+
+  (G54 shown; the slots follow the probe's output work offset, `#5200 + 20·n`.) The next operation re-indexes A/C after its Z retract, as upstream did, so the table turns with the tool at the top of Z.
+- **Why:** Upstream wrote `#5225`, which assumes Fanuc numbering. On the D00 the work offset slots are X, Y, Z, A, B, C (checked on the owner's control, MACHINE_VALIDATION A1): `#5225` is the absent B axis, so the skew was lost; C is `#5226`. Turning C also turns the work zero about the C centreline, so the X/Y of the work offset are turned with it (upstream left them; correct only with the work zero on the centreline). The centre is read on the control (programming manual 6.2.6.17: `#39032`/`#39033` machine parameter for rotation axis 1, plus the user offsets `#39012`/`#39013`, parameters 130012/130013), so nothing machine-specific is in the post. TCP fixes its table frame at the work offset's rotary zero (user parameters 150001 = 0, 150002 = 0 on the owner's control), so later TCP and 3+2 operations follow the corrected C.
+- **Sign:** Renishaw O8843 returns `#144` counterclockwise-positive; the machine configuration turns C about −Z, so C + `#144` turns the table by −`#144` and squares the part. The X/Y re-solve uses the same rotation.
+- **Guards (macro alarms 9171/9172):** no angle result; a non-zero external X/Y (not included in the re-solve), external A or work offset A (the C centre moves when A is off zero).
+- **Check:** the angled-probing fixture posts (it stopped with an error before); no other fixture changes. Machine test MACHINE_VALIDATION C6 (2026-10-26): a 2° skew simulated in G55 C came back to C 0.000, and the X/Y origin (on a bore 33 mm from the C centreline) came back within 0.011 mm.
+- **Use:** probe the angle before X/Y, or probe X/Y on a feature at the WCS origin. An X/Y probe of a feature away from the origin on a crooked part puts the origin off by about distance × angle; the re-solve then carries that error along.
 
 Note on `probingType` Blum: the Blum branches call `G65 P8700` / `P8703`, Blum's own macro numbers. They are only correct on a control with Blum's probing macros installed. On a control with the Renishaw O88xx set (the owner's), O8700 is Renishaw's error-message macro and O8703 is absent, so Blum must not be selected there.

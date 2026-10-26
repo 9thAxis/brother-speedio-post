@@ -92,6 +92,13 @@ parameters xxx001, xxx002, …, alignment checked against DB defaults); Renishaw
   values afterwards. The G54 slots follow the same order.
 - **Fix (no motion change):** until confirmed, `error()` for AXIS_ROT angle compensation
   instead of writing it. After confirmation, write `#5226` and warn about the XY origin.
+- **Fixed (2026-10-26, motion change):** `#52x6` written, and the work offset X/Y turned
+  about the C centreline read on the control (`#39032 + #39012`, `#39033 + #39013`; values
+  checked at the control against the backup: −249.975, −270.022, −0.0015, −0.002). Macro
+  alarms refuse a missing result and non-zero external X/Y, external A or work offset A.
+  The sign follows O8843 (`#144` counterclockwise-positive) and the machine configuration
+  (C about −Z). Proven on the machine by C6 (2026-10-26): a 2° skew came back to C 0.000 with
+  the X/Y origin within 0.011 mm. CUSTOMIZATIONS #17.
 
 ### 1.2 Protected probe moves without F run at the macro's fast feed — Upstream, new
 - **Code:** `protectedProbeMove` 783–797 and `onCycleEnd` emit `G65 P8810` through modal

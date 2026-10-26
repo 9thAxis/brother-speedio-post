@@ -1,3 +1,1 @@
 Milling/5x Simultaneous/tcp with tsc.cnc|Tool number 0 is not valid for G100
-Milling/Probing/angled probing.cnc|Angle compensation through the rotary work offset is disabled
-Probing/angled probing.cnc|Angle compensation through the rotary work offset is disabled
